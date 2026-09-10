@@ -325,6 +325,11 @@ public partial class MainWindow : Window
         StatusTextBlock.Text = message.Success ? "Shader compilado" : "Erro no shader — prévia mantém a última compilação válida";
     }
 
+    private void ClearLogButton_Click(object sender, RoutedEventArgs e)
+    {
+        DiagnosticsTextBox.Clear();
+    }
+
     private void AppendDiagnostic(string text)
     {
         DiagnosticsTextBox.AppendText($"[{DateTime.Now:HH:mm:ss}] {text}{Environment.NewLine}");

@@ -180,6 +180,7 @@
                 </Grid.RowDefinitions>
 
                 <DockPanel Margin="0,0,0,8">
+                    <Button Name="ClearLogButton" DockPanel.Dock="Right" Content="Clear" ToolTip="Limpar o log de diagnósticos" Click="ClearLogButton_Click"/>
                     <Button Name="GoToErrorButton" DockPanel.Dock="Right" Content="Ir para o erro" IsEnabled="False" Click="GoToErrorButton_Click"/>
                     <TextBlock Name="CompileSummaryTextBlock" Text="Diagnósticos de compilação" FontSize="14" FontWeight="Bold" TextWrapping="Wrap" VerticalAlignment="Center"/>
                 </DockPanel>
