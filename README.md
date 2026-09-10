@@ -339,3 +339,13 @@ This project is licensed under the [MIT License](LICENSE.md).
 
 **Addendo / Addendum**: Este projeto contou com o uso de assistência de IA no processo de desenvolvimento e documentação, algo coerente com o contexto de 2026.  
 **Addendum**: This project was developed with the help of AI assistance during development and documentation, which is consistent with the 2026 context.
+
+### Autosave e edição pelo Visual Studio
+
+O Studio salva automaticamente a sessão e os shaders associados a arquivos a cada **10 minutos**, inclusive com a prévia de vídeo indisponível. Shaders ainda sem nome ficam na sessão de recuperação em `%LOCALAPPDATA%/GLSLShaderLab/session.json`; use **Save** para escolher um arquivo.
+
+1. Abra um `.frag` no Studio (o `.vert` de mesmo nome também será acompanhado, se existir). É possível abrir um `.vert` separadamente pela aba Vertex.
+2. Abra os mesmos arquivos no Visual Studio ou outro editor.
+3. Salve no editor externo. O Studio verifica os arquivos a cada segundo e aguarda duas leituras iguais antes de atualizar o código e compilar — normalmente cerca de dois segundos. Isso funciona mesmo com **Auto** desligado; esse controle continua valendo para digitação dentro do Studio.
+
+Se houver alterações pendentes no Studio e no disco para o mesmo shader, o painel informa um conflito e não sobrescreve nenhuma versão. Use **Save As** para guardar a edição local em outro arquivo, ou **Open** para carregar a versão do disco. O autosave também verifica mudanças externas antes de escrever. Arquivos excluídos, bloqueados ou sem permissão geram aviso; a monitoração continua tentando ler. Ao reiniciar, abra os arquivos novamente para retomar a monitoração.

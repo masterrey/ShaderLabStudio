@@ -11,13 +11,14 @@
         <SolidColorBrush x:Key="TertiaryBackgroundBrush" Color="#2D2D30"/>
         <SolidColorBrush x:Key="PrimaryForegroundBrush" Color="#E0E0E0"/>
         <SolidColorBrush x:Key="SecondaryForegroundBrush" Color="#A0A0A0"/>
-        <SolidColorBrush x:Key="AccentBrush" Color="#007ACC"/>
-        
+        <SolidColorBrush x:Key="AccentBrush" Color="#59B9FF"/>
+
+        <SolidColorBrush x:Key="ErrorForegroundBrush" Color="#FF9999"/>
         <!-- Editor -->
         <SolidColorBrush x:Key="EditorBackgroundBrush" Color="#1E1E1E"/>
         <SolidColorBrush x:Key="EditorForegroundBrush" Color="#D4D4D4"/>
         <SolidColorBrush x:Key="ScrollBarBackgroundBrush" Color="#252526"/>
-        
+
         <!-- Syntax -->
         <SolidColorBrush x:Key="CommentBrush" Color="#6A9955"/>
         <SolidColorBrush x:Key="KeywordBrush" Color="#569CD6"/>
@@ -26,7 +27,7 @@
         <SolidColorBrush x:Key="StringBrush" Color="#CE9178"/>
         <SolidColorBrush x:Key="PreprocessorBrush" Color="#C586C0"/>
         <SolidColorBrush x:Key="BuiltinBrush" Color="#DCDCAA"/>
-        
+
         <!-- UI -->
         <SolidColorBrush x:Key="ToolBarBackgroundBrush" Color="#2D2D30"/>
         <SolidColorBrush x:Key="StatusBarBackgroundBrush" Color="#2D2D30"/>
@@ -35,7 +36,7 @@
         <SolidColorBrush x:Key="TabSelectedBackgroundBrush" Color="#1E1E1E"/>
         <SolidColorBrush x:Key="BorderBrush" Color="#3E3E42"/>
         <SolidColorBrush x:Key="ButtonHoverBackgroundBrush" Color="#3E3E42"/>
-        <SolidColorBrush x:Key="ButtonPressedBackgroundBrush" Color="#007ACC"/>
+        <SolidColorBrush x:Key="ButtonPressedBackgroundBrush" Color="#59B9FF"/>
 
         <!-- ===== GLOBAL STYLES ===== -->
         <Style TargetType="Window">
@@ -52,6 +53,19 @@
         </Style>
 
         <Style TargetType="Button">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}" CornerRadius="3">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" RecognizesAccessKey="True"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.55"/></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+
             <Setter Property="Background" Value="{DynamicResource TertiaryBackgroundBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource PrimaryForegroundBrush}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
@@ -65,10 +79,12 @@
                 </Trigger>
                 <Trigger Property="IsPressed" Value="True">
                     <Setter Property="Background" Value="{DynamicResource ButtonPressedBackgroundBrush}"/>
-                    <Setter Property="Foreground" Value="White"/>
+                    <Setter Property="Foreground" Value="{DynamicResource PrimaryForegroundBrush}"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
+
+        <Style x:Key="{x:Static ToolBar.ButtonStyleKey}" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"/>
 
         <Style TargetType="ComboBox">
             <Setter Property="Background" Value="{DynamicResource SecondaryBackgroundBrush}"/>
@@ -81,13 +97,20 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="ComboBox">
                         <Grid>
-                            <ToggleButton Name="ToggleButton" 
+                            <ToggleButton Name="ToggleButton"
                                         Background="{DynamicResource SecondaryBackgroundBrush}"
                                         BorderBrush="{DynamicResource BorderBrush}"
                                         BorderThickness="1"
                                         Focusable="False"
                                         IsChecked="{Binding Path=IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
                                         ClickMode="Press">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
+                                            <ContentPresenter/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition />
@@ -125,7 +148,7 @@
                                           BorderBrush="{DynamicResource BorderBrush}"
                                           BorderThickness="1"/>
                                     <ScrollViewer Margin="1" SnapsToDevicePixels="True">
-                                        <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Contained" 
+                                        <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Contained"
                                                   Background="{DynamicResource SecondaryBackgroundBrush}"/>
                                     </ScrollViewer>
                                 </Grid>
@@ -143,11 +166,11 @@
             <Style.Triggers>
                 <Trigger Property="IsHighlighted" Value="True">
                     <Setter Property="Background" Value="{DynamicResource ButtonHoverBackgroundBrush}"/>
-                    <Setter Property="Foreground" Value="White"/>
+                    <Setter Property="Foreground" Value="{DynamicResource PrimaryForegroundBrush}"/>
                 </Trigger>
                 <Trigger Property="IsSelected" Value="True">
-                    <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
-                    <Setter Property="Foreground" Value="White"/>
+                    <Setter Property="Background" Value="{DynamicResource ButtonHoverBackgroundBrush}"/>
+                    <Setter Property="Foreground" Value="{DynamicResource PrimaryForegroundBrush}"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
@@ -203,8 +226,8 @@
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsSelected" Value="True">
                                 <Setter TargetName="Border" Property="Background" Value="{DynamicResource TabSelectedBackgroundBrush}"/>
-                                <Setter Property="Foreground" Value="White"/>
-                                <Setter TargetName="ContentSite" Property="TextElement.Foreground" Value="White"/>
+                                <Setter Property="Foreground" Value="{DynamicResource PrimaryForegroundBrush}"/>
+                                <Setter TargetName="ContentSite" Property="TextElement.Foreground" Value="{DynamicResource PrimaryForegroundBrush}"/>
                             </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="Border" Property="Background" Value="{DynamicResource ButtonHoverBackgroundBrush}"/>

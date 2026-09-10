@@ -1,5 +1,5 @@
 using System;
-using System.Text.RegularExpressions;
+using GLSLShaderLab.Core.Services;
 using GLSLShaderLab.Core.Models;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Mathematics;
@@ -123,19 +123,8 @@ internal sealed class ShaderProgram : IDisposable
             return new ShaderCompileMessage(false, "Unknown shader compile error.", stage);
         }
 
-        var line = TryParseLine(log);
+        var line = ShaderDiagnosticParser.TryParseLine(log);
         return new ShaderCompileMessage(false, log, stage, line);
-    }
-
-    private static int? TryParseLine(string log)
-    {
-        var match = Regex.Match(log, @"0\((\d+)\)");
-        if (match.Success && int.TryParse(match.Groups[1].Value, out var line))
-        {
-            return line;
-        }
-
-        return null;
     }
 
     public void Dispose()
