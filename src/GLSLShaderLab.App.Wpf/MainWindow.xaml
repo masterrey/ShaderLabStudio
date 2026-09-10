@@ -20,6 +20,7 @@
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" VerticalAlignment="Center">
                     <Button Name="OpenButton" Content="📁 Open" Click="OpenButton_Click" Padding="8,4" Margin="2"/>
                     <Button Name="SaveButton" Content="💾 Save" Click="SaveButton_Click" Padding="8,4" Margin="2"/>
+                    <Button Content="Save As…" Click="SaveAsButton_Click" Padding="8,4" Margin="2"/>
                     <Separator Style="{DynamicResource {x:Static ToolBar.SeparatorStyleKey}}" Margin="4,0"/>
                     <Button Name="CompileButton" Content="⚙️ Compile" Click="CompileButton_Click" Padding="8,4" Margin="2"/>
                     <CheckBox Name="AutoCompileCheckBox" Content="Auto" Checked="AutoCompileCheckBox_OnChanged" Unchecked="AutoCompileCheckBox_OnChanged" Margin="4,0,0,0" VerticalAlignment="Center"/>
@@ -30,7 +31,7 @@
                 </StackPanel>
 
                 <!-- Right side: Theme Toggle -->
-                <Button Name="ThemeToggleButton" Content="🌓 Theme" Click="ThemeToggleButton_Click" Padding="10,4" Margin="2" DockPanel.Dock="Right" Background="{DynamicResource AccentBrush}" Foreground="White"/>
+                <Button Name="ThemeToggleButton" Content="🌓 Theme" Click="ThemeToggleButton_Click" Padding="10,4" Margin="2" DockPanel.Dock="Right" Background="{DynamicResource TertiaryBackgroundBrush}" Foreground="{DynamicResource PrimaryForegroundBrush}"/>
             </DockPanel>
         </ToolBar>
 
@@ -39,9 +40,6 @@
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                 <TextBlock Text="3D Mode:" VerticalAlignment="Center" Margin="4,0"/>
                 <ComboBox Name="RenderModeComboBox" Width="80" SelectionChanged="RenderModeComboBox_SelectionChanged" Padding="4" VerticalAlignment="Center">
-                    <ComboBox.Background>
-                        <ImageBrush/>
-                    </ComboBox.Background>
                     <ComboBoxItem Content="2D" IsSelected="True"/>
                     <ComboBoxItem Content="3D"/>
                 </ComboBox>
@@ -62,6 +60,7 @@
             <StatusBarItem>
                 <TextBlock Name="FpsTextBlock" Text="FPS: 0" Foreground="{DynamicResource SecondaryForegroundBrush}"/>
             </StatusBarItem>
+            <StatusBarItem><TextBlock Name="FileSyncStatusTextBlock" Text="Autosave: 10 min • edição externa: ativa" Foreground="{DynamicResource SecondaryForegroundBrush}"/></StatusBarItem>
         </StatusBar>
 
         <Grid Name="MainContentGrid" Background="{DynamicResource PrimaryBackgroundBrush}">
@@ -180,12 +179,16 @@
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
-                <TextBlock Text="🔍 Diagnostics" FontSize="14" FontWeight="Bold" Margin="0,0,0,8" Foreground="{DynamicResource AccentBrush}"/>
+                <DockPanel Margin="0,0,0,8">
+                    <Button Name="ClearLogButton" DockPanel.Dock="Right" Content="Clear" ToolTip="Limpar o log de diagnósticos" Click="ClearLogButton_Click"/>
+                    <Button Name="GoToErrorButton" DockPanel.Dock="Right" Content="Ir para o erro" IsEnabled="False" Click="GoToErrorButton_Click"/>
+                    <TextBlock Name="CompileSummaryTextBlock" Text="Diagnósticos de compilação" FontSize="14" FontWeight="Bold" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                </DockPanel>
 
                 <Border Grid.Row="1" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="2" Background="{DynamicResource EditorBackgroundBrush}">
                     <TextBox Name="DiagnosticsTextBox"
                          FontFamily="Consolas"
-                         FontSize="12"
+                         FontSize="14"
                          IsReadOnly="True"
                          TextWrapping="Wrap"
                          AcceptsReturn="True"

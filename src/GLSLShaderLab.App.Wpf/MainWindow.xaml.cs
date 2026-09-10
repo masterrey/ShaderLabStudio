@@ -36,9 +36,16 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _compileDebounceTimer;
     private readonly Stopwatch _frameStopwatch = Stopwatch.StartNew();
 
+    private bool _videoFailed;
+    private ShaderCompileMessage? _lastError;
     private GLControl? _glControl;
     private ShaderDocument _document = ShaderTemplateCatalog.CreateDefaultDocument();
     private string? _currentFilePath;
+    private ShaderFileSync? _fragmentFile;
+    private ShaderFileSync? _vertexFile;
+    private readonly DispatcherTimer _autoSaveTimer;
+    private readonly DispatcherTimer _filePollTimer;
+    private readonly Dictionary<string, string> _fileWarnings = new();
     private DateTime _fpsWindowStart = DateTime.UtcNow;
     private int _framesInWindow;
     private bool _isFullscreen;
@@ -63,8 +70,8 @@ public partial class MainWindow : Window
         {
             AppThemeMode.Dark => new []
             {
-                (new Regex(@"//.*$", RegexOptions.Compiled | RegexOptions.Multiline), CreateBrush("#6A9955"), (FontWeight?)null),
-                (new Regex(@"/\*.*?\*/", RegexOptions.Compiled | RegexOptions.Singleline), CreateBrush("#6A9955"), (FontWeight?)null),
+                (new Regex(@"//.*$", RegexOptions.Compiled | RegexOptions.Multiline), CreateBrush("#91B879"), (FontWeight?)null),
+                (new Regex(@"/\*.*?\*/", RegexOptions.Compiled | RegexOptions.Singleline), CreateBrush("#91B879"), (FontWeight?)null),
                 (new Regex("^\\s*#\\w+.*$", RegexOptions.Compiled | RegexOptions.Multiline), CreateBrush("#C586C0"), (FontWeight?)null),
                 (new Regex("\"(?:\\\\.|[^\"\\\\])*\"", RegexOptions.Compiled), CreateBrush("#CE9178"), (FontWeight?)null),
                 (new Regex(@"\b\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?[fFuU]?\b", RegexOptions.Compiled), CreateBrush("#B5CEA8"), (FontWeight?)null),
@@ -81,7 +88,7 @@ public partial class MainWindow : Window
                 (new Regex("\"(?:\\\\.|[^\"\\\\])*\"", RegexOptions.Compiled), CreateBrush("#A31515"), (FontWeight?)null),
                 (new Regex(@"\b\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?[fFuU]?\b", RegexOptions.Compiled), CreateBrush("#098658"), (FontWeight?)null),
                 (new Regex(@"\b(?:if|else|for|while|do|switch|case|default|break|continue|discard|return|const|in|out|inout|uniform|layout|precision|struct)\b", RegexOptions.Compiled), CreateBrush("#0000FF"), FontWeights.SemiBold),
-                (new Regex(@"\b(?:void|bool|int|uint|float|double|vec2|vec3|vec4|ivec2|ivec3|ivec4|uvec2|uvec3|uvec4|bvec2|bvec3|bvec4|mat2|mat3|mat4|mat2x2|mat2x3|mat2x4|mat3x2|mat3x3|mat3x4|mat4x2|mat4x3|mat4x4|sampler1D|sampler2D|sampler3D|samplerCube|sampler2DArray|sampler2DShadow)\b", RegexOptions.Compiled), CreateBrush("#2B91AF"), (FontWeight?)null),
+                (new Regex(@"\b(?:void|bool|int|uint|float|double|vec2|vec3|vec4|ivec2|ivec3|ivec4|uvec2|uvec3|uvec4|bvec2|bvec3|bvec4|mat2|mat3|mat4|mat2x2|mat2x3|mat2x4|mat3x2|mat3x3|mat3x4|mat4x2|mat4x3|mat4x4|sampler1D|sampler2D|sampler3D|samplerCube|sampler2DArray|sampler2DShadow)\b", RegexOptions.Compiled), CreateBrush("#17657A"), (FontWeight?)null),
                 (new Regex(@"\bgl_[A-Za-z0-9_]*\b", RegexOptions.Compiled), CreateBrush("#795E26"), (FontWeight?)null),
                 (new Regex(@"\b(?:iResolution|iTime|iTimeDelta|iFrame|iMouse|iDate|iChannelTime|iChannelResolution|iChannel0|iChannel1|iChannel2|iChannel3|mainImage|fragColor|fragCoord|VertexPos|vertex)\b", RegexOptions.Compiled), CreateBrush("#795E26"), (FontWeight?)null),
             },
@@ -104,6 +111,10 @@ public partial class MainWindow : Window
             Interval = TimeSpan.FromMilliseconds(450)
         };
         _compileDebounceTimer.Tick += CompileDebounceTimer_Tick;
+        _autoSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(10) };
+        _autoSaveTimer.Tick += (_, _) => AutoSaveEditors();
+        _filePollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _filePollTimer.Tick += (_, _) => PollShaderFiles();
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
@@ -128,10 +139,13 @@ public partial class MainWindow : Window
         RenderModeComboBox.SelectedIndex = _document.RenderMode == RenderMode.ThreeD ? 1 : 0;
 
         InitializeGlHost();
-        if (_glControl is not null)
+        if (!_videoFailed && _glControl is not null)
         {
-            _glControl.MakeCurrent();
-            AppendCompileResult(_renderer.SetRenderMode(_document.RenderMode, _document.VertexSource));
+            RunVideoAction(() =>
+            {
+                _glControl.MakeCurrent();
+                AppendCompileResult(_renderer.SetRenderMode(_document.RenderMode, _document.VertexSource));
+            });
         }
 
         Update3DControlsState();
@@ -143,13 +157,20 @@ public partial class MainWindow : Window
             ToggleFullscreen();
         }
 
-        _renderTimer.Start();
-        AppendDiagnostic("Studio ready.");
+        if (!_videoFailed)
+        {
+            _renderTimer.Start();
+            AppendDiagnostic("Studio ready.");
+        }
 
         SetupLineNumberScrollSync();
+        _autoSaveTimer.Start();
+        _filePollTimer.Start();
     }
 
-    private void InitializeGlHost()
+    private void InitializeGlHost() => RunVideoAction(() => InitializeGlHostCore());
+
+    private void InitializeGlHostCore()
     {
         var glSettings = new GLControlSettings
         {
@@ -167,9 +188,12 @@ public partial class MainWindow : Window
 
         _glControl.Resize += (_, _) =>
         {
-            if (_glControl.ClientSize.Width <= 0 || _glControl.ClientSize.Height <= 0) return;
-            _glControl.MakeCurrent();
-            _renderer.Resize(_glControl.ClientSize.Width, _glControl.ClientSize.Height);
+            if (_videoFailed || _glControl.ClientSize.Width <= 0 || _glControl.ClientSize.Height <= 0) return;
+            RunVideoAction(() =>
+            {
+                _glControl.MakeCurrent();
+                _renderer.Resize(_glControl.ClientSize.Width, _glControl.ClientSize.Height);
+            });
         };
 
         _glControl.MouseMove += (_, args) =>
@@ -240,9 +264,11 @@ public partial class MainWindow : Window
         AppendCompileResult(message);
     }
 
-    private void RenderTimer_Tick(object? sender, EventArgs e)
+    private void RenderTimer_Tick(object? sender, EventArgs e) => RunVideoAction(() => RenderTimer_TickCore(sender, e));
+
+    private void RenderTimer_TickCore(object? sender, EventArgs e)
     {
-        if (_glControl is null || !_glControl.IsHandleCreated)
+        if (_videoFailed || _glControl is null || !_glControl.IsHandleCreated)
         {
             return;
         }
@@ -266,9 +292,11 @@ public partial class MainWindow : Window
         }
     }
 
-    private void CompileCurrentShader()
+    private void CompileCurrentShader() => RunVideoAction(() => CompileCurrentShaderCore());
+
+    private void CompileCurrentShaderCore()
     {
-        if (_glControl is null)
+        if (_videoFailed || _glControl is null)
         {
             return;
         }
@@ -289,7 +317,17 @@ public partial class MainWindow : Window
         var stage = string.IsNullOrWhiteSpace(message.Stage) ? string.Empty : $"[{message.Stage}]";
         var line = message.Line.HasValue ? $" line {message.Line.Value}" : string.Empty;
         AppendDiagnostic($"{prefix}{stage}{line} {message.Message}");
-        StatusTextBlock.Text = message.Success ? "Shader compiled" : "Shader error";
+        _lastError = message.Success ? null : message;
+        GoToErrorButton.IsEnabled = !message.Success && message.Line.HasValue && message.Stage is "vertex" or "fragment";
+        CompileSummaryTextBlock.Text = message.Success ? "Compilado com sucesso" :
+            $"ERRO • {message.Stage ?? "shader"} • {(message.Line.HasValue ? $"linha {message.Line}" : "linha não informada pelo driver")} — consulte os detalhes abaixo";
+        CompileSummaryTextBlock.SetResourceReference(TextBlock.ForegroundProperty, message.Success ? "PrimaryForegroundBrush" : "ErrorForegroundBrush");
+        StatusTextBlock.Text = message.Success ? "Shader compilado" : "Erro no shader — prévia mantém a última compilação válida";
+    }
+
+    private void ClearLogButton_Click(object sender, RoutedEventArgs e)
+    {
+        DiagnosticsTextBox.Clear();
     }
 
     private void AppendDiagnostic(string text)
@@ -344,6 +382,8 @@ public partial class MainWindow : Window
         EditorLineNumbers.LineHeight = nextSize * 1.1;
         VertexEditorLineNumbers.FontSize = nextSize;
         VertexEditorLineNumbers.LineHeight = nextSize * 1.1;
+        UpdateLineNumbers(EditorTextBox, EditorLineNumbers);
+        UpdateLineNumbers(VertexEditorTextBox, VertexEditorLineNumbers);
         e.Handled = true;
     }
 
@@ -468,15 +508,18 @@ public partial class MainWindow : Window
         var mode = RenderModeComboBox.SelectedIndex == 1 ? RenderMode.ThreeD : RenderMode.TwoD;
         _document.RenderMode = mode;
         _document.VertexSource = GetEditorText(VertexEditorTextBox);
-        if (_glControl is null)
+        if (_videoFailed || _glControl is null)
         {
             Update3DControlsState();
             _sessionStore.Save(_document);
             return;
         }
 
-        var result = _renderer.SetRenderMode(mode, _document.VertexSource);
-        AppendCompileResult(result);
+        RunVideoAction(() =>
+        {
+            _glControl.MakeCurrent();
+            AppendCompileResult(_renderer.SetRenderMode(mode, _document.VertexSource));
+        });
         Update3DControlsState();
 
         if (mode == RenderMode.ThreeD)
@@ -541,12 +584,13 @@ public partial class MainWindow : Window
         // Update all merged resources with new theme colors
         var updateColors = new Dictionary<string, SolidColorBrush>
         {
+            { "ErrorForegroundBrush", CreateColorBrush(_currentTheme == AppThemeMode.Dark ? "#FF9999" : "#A31515") },
             { "PrimaryBackgroundBrush", CreateColorBrush(_currentTheme == AppThemeMode.Dark ? "#1E1E1E" : "#FFFFFF") },
             { "SecondaryBackgroundBrush", CreateColorBrush(_currentTheme == AppThemeMode.Dark ? "#252526" : "#F5F5F5") },
             { "TertiaryBackgroundBrush", CreateColorBrush(_currentTheme == AppThemeMode.Dark ? "#2D2D30" : "#EFEFEF") },
             { "PrimaryForegroundBrush", CreateColorBrush(_currentTheme == AppThemeMode.Dark ? "#E0E0E0" : "#1E1E1E") },
             { "SecondaryForegroundBrush", CreateColorBrush(_currentTheme == AppThemeMode.Dark ? "#A0A0A0" : "#5A5A5A") },
-            { "AccentBrush", CreateColorBrush(_currentTheme == AppThemeMode.Dark ? "#007ACC" : "#0066CC") },
+            { "AccentBrush", CreateColorBrush(_currentTheme == AppThemeMode.Dark ? "#59B9FF" : "#005AA3") },
             { "EditorBackgroundBrush", CreateColorBrush(_currentTheme == AppThemeMode.Dark ? "#1E1E1E" : "#FFFFFF") },
             { "EditorForegroundBrush", CreateColorBrush(_currentTheme == AppThemeMode.Dark ? "#D4D4D4" : "#000000") },
             { "ScrollBarBackgroundBrush", CreateColorBrush(_currentTheme == AppThemeMode.Dark ? "#252526" : "#F5F5F5") },
@@ -557,17 +601,17 @@ public partial class MainWindow : Window
             { "TabSelectedBackgroundBrush", CreateColorBrush(_currentTheme == AppThemeMode.Dark ? "#1E1E1E" : "#FFFFFF") },
             { "BorderBrush", CreateColorBrush(_currentTheme == AppThemeMode.Dark ? "#3E3E42" : "#CCCCCC") },
             { "ButtonHoverBackgroundBrush", CreateColorBrush(_currentTheme == AppThemeMode.Dark ? "#3E3E42" : "#E0E0E0") },
-            { "ButtonPressedBackgroundBrush", CreateColorBrush(_currentTheme == AppThemeMode.Dark ? "#007ACC" : "#0066CC") },
+            { "ButtonPressedBackgroundBrush", CreateColorBrush(_currentTheme == AppThemeMode.Dark ? "#59B9FF" : "#005AA3") },
         };
 
         foreach (var kvp in updateColors)
         {
-            Resources[kvp.Key] = kvp.Value;
+            System.Windows.Application.Current.Resources[kvp.Key] = kvp.Value;
         }
 
         // Force window background and foreground update
-        Background = (SolidColorBrush)Resources["PrimaryBackgroundBrush"];
-        Foreground = (SolidColorBrush)Resources["PrimaryForegroundBrush"];
+        Background = (SolidColorBrush)FindResource("PrimaryBackgroundBrush");
+        Foreground = (SolidColorBrush)FindResource("PrimaryForegroundBrush");
     }
 
     private static SolidColorBrush CreateColorBrush(string hexColor)
@@ -578,9 +622,11 @@ public partial class MainWindow : Window
         return brush;
     }
 
-    private void LoadChannel(int channel)
+    private void LoadChannel(int channel) => RunVideoAction(() => LoadChannelCore(channel));
+
+    private void LoadChannelCore(int channel)
     {
-        if (_glControl is null)
+        if (_videoFailed || _glControl is null)
         {
             return;
         }
@@ -648,15 +694,19 @@ public partial class MainWindow : Window
         {
             SetEditorText(VertexEditorTextBox, File.ReadAllText(dialog.FileName));
             _document.VertexSource = GetEditorText(VertexEditorTextBox);
+            _vertexFile = new ShaderFileSync(dialog.FileName, _document.VertexSource);
             AppendDiagnostic($"Opened vertex shader: {dialog.FileName}");
         }
         else
         {
             SetEditorText(EditorTextBox, File.ReadAllText(dialog.FileName));
+            _fragmentFile = new ShaderFileSync(dialog.FileName, GetEditorText(EditorTextBox));
+            _vertexFile = null;
             var vertexSidecarPath = GetVertexSidecarPath(dialog.FileName);
             if (File.Exists(vertexSidecarPath))
             {
                 SetEditorText(VertexEditorTextBox, File.ReadAllText(vertexSidecarPath));
+                _vertexFile = new ShaderFileSync(vertexSidecarPath, GetEditorText(VertexEditorTextBox));
                 AppendDiagnostic($"Opened vertex: {vertexSidecarPath}");
             }
             else if (_document.RenderMode == RenderMode.ThreeD)
@@ -676,9 +726,10 @@ public partial class MainWindow : Window
 
     private void SaveButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!string.IsNullOrWhiteSpace(_currentFilePath))
+        var activePath = IsVertexTabSelected() ? _vertexFile?.Path : _currentFilePath;
+        if (!string.IsNullOrWhiteSpace(activePath))
         {
-            SaveToFile(_currentFilePath, confirmOverwrite: true);
+            SaveToFile(activePath, confirmOverwrite: true, isVertexOnly: IsVertexTabSelected());
         }
         else
         {
@@ -702,10 +753,6 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (!isVertexTab)
-        {
-            _currentFilePath = dialog.FileName;
-        }
         SaveToFile(dialog.FileName, isVertexOnly: isVertexTab);
     }
 
@@ -734,11 +781,14 @@ public partial class MainWindow : Window
         if (isVertexOnly)
         {
             File.WriteAllText(path, _document.VertexSource);
+            _vertexFile = new ShaderFileSync(path, _document.VertexSource);
             AppendDiagnostic($"Saved vertex shader: {path}");
         }
         else
         {
             File.WriteAllText(path, _document.FragmentSource);
+            _currentFilePath = path;
+            _fragmentFile = new ShaderFileSync(path, _document.FragmentSource);
 
             var vertexSidecarPath = GetVertexSidecarPath(path);
             var shouldSaveVertex = _document.RenderMode == RenderMode.ThreeD
@@ -748,6 +798,7 @@ public partial class MainWindow : Window
             if (shouldSaveVertex)
             {
                 File.WriteAllText(vertexSidecarPath, _document.VertexSource);
+                _vertexFile = new ShaderFileSync(vertexSidecarPath, _document.VertexSource);
                 AppendDiagnostic($"Saved vertex: {vertexSidecarPath}");
             }
 
@@ -757,6 +808,83 @@ public partial class MainWindow : Window
         _sessionStore.Save(_document);
         UpdateTitle();
         StatusTextBlock.Text = "Saved";
+    }
+
+    private void ReportFileWarning(string path, string message)
+    {
+        if (_fileWarnings.TryGetValue(path, out var previous) && previous == message) return;
+        _fileWarnings[path] = message;
+        AppendDiagnostic($"[ARQUIVO] {path}: {message}");
+        FileSyncStatusTextBlock.Text = message;
+    }
+
+    private void PollShaderFiles()
+    {
+        bool changed = false;
+        foreach (var path in _fileWarnings.Keys.ToArray())
+            if (path != _fragmentFile?.Path && path != _vertexFile?.Path) _fileWarnings.Remove(path);
+        foreach (var (file, editor) in new[] { (_fragmentFile, EditorTextBox), (_vertexFile, VertexEditorTextBox) })
+        {
+            if (file is null) continue;
+            try
+            {
+                var source = file.Poll(GetEditorText(editor));
+                if (file.HasConflict)
+                {
+                    ReportFileWarning(file.Path, "Conflito: arquivo e editor mudaram. Use Save As para preservar sua edição ou Open para carregar o disco.");
+                    continue;
+                }
+                _fileWarnings.Remove(file.Path);
+                if (source is null) continue;
+                SetEditorText(editor, source);
+                changed = true;
+                AppendDiagnostic($"[EXTERNO] Atualizado: {file.Path}");
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                ReportFileWarning(file.Path, $"Arquivo indisponível; nova tentativa automática: {ex.Message}");
+            }
+        }
+        if (changed)
+        {
+            _document.FragmentSource = GetEditorText(EditorTextBox);
+            _document.VertexSource = GetEditorText(VertexEditorTextBox);
+            _compileDebounceTimer.Stop();
+            CompileCurrentShader(); // External saves compile even when the editor's Auto checkbox is off.
+        }
+        if (_fileWarnings.Count == 0)
+            FileSyncStatusTextBlock.Text = "Autosave: 10 min • edição externa: ativa";
+    }
+
+    private void AutoSaveEditors()
+    {
+        _document.FragmentSource = GetEditorText(EditorTextBox);
+        _document.VertexSource = GetEditorText(VertexEditorTextBox);
+        try
+        {
+            // Also protects unnamed shaders and remains available if graphics fails.
+            _sessionStore.Save(_document);
+            AppendDiagnostic("[AUTOSAVE] Sessão salva (intervalo: 10 minutos).");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AppendDiagnostic($"[AUTOSAVE] Falha ao salvar sessão: {ex.Message}");
+        }
+        foreach (var (file, source) in new[] { (_fragmentFile, _document.FragmentSource), (_vertexFile, _document.VertexSource) })
+        {
+            if (file is null) continue;
+            try
+            {
+                if (!file.AutoSave(source))
+                    ReportFileWarning(file.Path, "Autosave adiado: há mudanças externas pendentes. Nenhum código foi sobrescrito.");
+                else
+                    AppendDiagnostic($"[AUTOSAVE] Arquivo salvo: {file.Path}");
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                ReportFileWarning(file.Path, $"Autosave indisponível: {ex.Message}");
+            }
+        }
     }
 
     private static string GetVertexSidecarPath(string fragmentPath)
@@ -773,6 +901,8 @@ public partial class MainWindow : Window
 
     private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
+        _autoSaveTimer.Stop();
+        _filePollTimer.Stop();
         _renderTimer.Stop();
         _compileDebounceTimer.Stop();
 
@@ -783,11 +913,14 @@ public partial class MainWindow : Window
         _document.SelectedModelPath = _renderer.CurrentModelPath;
         _sessionStore.Save(_document);
 
-        if (_glControl is not null)
+        if (!_videoFailed && _glControl is not null)
         {
-            _glControl.MakeCurrent();
-            _renderer.Dispose();
-            _glControl.Dispose();
+            RunVideoAction(() =>
+            {
+                _glControl.MakeCurrent();
+                _renderer.Dispose();
+                _glControl.Dispose();
+            });
         }
     }
 
@@ -890,9 +1023,11 @@ public partial class MainWindow : Window
         TryLoadModelAt(ModelComboBox.SelectedIndex, persistSelection: true);
     }
 
-    private void TryLoadModelAt(int index, bool persistSelection)
+    private void TryLoadModelAt(int index, bool persistSelection) => RunVideoAction(() => TryLoadModelAtCore(index, persistSelection));
+
+    private void TryLoadModelAtCore(int index, bool persistSelection)
     {
-        if (_glControl is null || index < 0 || index >= _availableModels.Count)
+        if (_videoFailed || _glControl is null || index < 0 || index >= _availableModels.Count)
         {
             return;
         }
@@ -1030,29 +1165,23 @@ public partial class MainWindow : Window
     {
         var navigator = document.ContentStart;
         var remaining = offset;
-
         while (navigator is not null)
         {
-            if (navigator.GetPointerContext(LogicalDirection.Forward) == TextPointerContext.Text)
+            var context = navigator.GetPointerContext(LogicalDirection.Forward);
+            if (context == TextPointerContext.Text)
             {
-                var textRun = navigator.GetTextInRun(LogicalDirection.Forward);
-                if (textRun.Length >= remaining)
-                {
-                    return navigator.GetPositionAtOffset(remaining) ?? document.ContentEnd;
-                }
-
-                remaining -= textRun.Length;
+                var run = navigator.GetTextInRun(LogicalDirection.Forward);
+                if (remaining <= run.Length) return navigator.GetPositionAtOffset(remaining)!;
+                remaining -= run.Length;
             }
-
-            var next = navigator.GetNextContextPosition(LogicalDirection.Forward);
-            if (next is null)
+            else if ((context == TextPointerContext.ElementEnd && navigator.Parent is Paragraph) ||
+                     (context == TextPointerContext.ElementStart && navigator.GetAdjacentElement(LogicalDirection.Forward) is LineBreak))
             {
-                break;
+                if (remaining <= 0) return navigator;
+                remaining = Math.Max(0, remaining - 2); // TextRange represents breaks as CRLF.
             }
-
-            navigator = next;
+            navigator = navigator.GetNextContextPosition(LogicalDirection.Forward);
         }
-
         return document.ContentEnd;
     }
 
@@ -1070,7 +1199,13 @@ public partial class MainWindow : Window
         lineNumberBlock.Text = lineNumbers.ToString();
 
         // Usar o mesmo line height do editor para alinhamento perfeito
-        lineNumberBlock.LineHeight = editor.FontSize * 1.0;
+        var lineHeight = editor.FontSize * 1.4;
+        lineNumberBlock.LineHeight = lineHeight;
+        lineNumberBlock.LineStackingStrategy = LineStackingStrategy.BlockLineHeight;
+        editor.Document.LineHeight = lineHeight;
+        editor.Document.LineStackingStrategy = LineStackingStrategy.BlockLineHeight;
+        editor.Document.PageWidth = 10000; // Keep source lines unwrapped, matching the gutter.
+        foreach (var block in editor.Document.Blocks) block.Margin = new Thickness(0);
     }
 
     private void SetupLineNumberScrollSync()
@@ -1087,6 +1222,45 @@ public partial class MainWindow : Window
     private void VertexEditorTextBox_ScrollChanged(object sender, ScrollChangedEventArgs e)
     {
         VertexEditorLineNumbersScroller.ScrollToVerticalOffset(e.VerticalOffset);
+    }
+
+    private void RunVideoAction(Action action)
+    {
+        if (_videoFailed) return;
+        try { action(); }
+        catch (Exception ex)
+        {
+            _videoFailed = true;
+            _renderTimer.Stop();
+            _compileDebounceTimer.Stop();
+            ExitFullscreenIfActive();
+            PreviewHost.Visibility = Visibility.Collapsed;
+            PreviewTitleTextBlock.Text = "Prévia indisponível — falha de vídeo";
+            StatusTextBlock.Text = "Vídeo interrompido. Você pode editar e salvar o código.";
+            CompileSummaryTextBlock.Text = "ERRO DE VÍDEO — salve o código e reinicie a aplicação para tentar novamente.";
+            CompileSummaryTextBlock.SetResourceReference(TextBlock.ForegroundProperty, "ErrorForegroundBrush");
+            AppendDiagnostic($"[ERRO DE VÍDEO] {ex}");
+        }
+    }
+
+    private void GoToErrorButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_lastError?.Line is not int line) return;
+        var editor = _lastError.Stage == "vertex" ? VertexEditorTextBox : EditorTextBox;
+        ShaderEditorsTabControl.SelectedIndex = _lastError.Stage == "vertex" ? 1 : 0;
+        var text = GetEditorText(editor);
+        var offset = 0;
+        for (var i = 1; i < line; i++)
+        {
+            var next = text.IndexOf('\n', offset);
+            if (next < 0) return;
+            offset = next + 1;
+        }
+        var end = text.IndexOf('\n', offset);
+        if (end < 0) end = text.Length;
+        editor.Focus();
+        editor.Selection.Select(GetTextPointerAtOffset(editor.Document, offset), GetTextPointerAtOffset(editor.Document, end));
+        editor.ScrollToVerticalOffset((line - 1) * editor.Document.LineHeight);
     }
 
     private static WpfBrush CreateBrush(string hexColor)

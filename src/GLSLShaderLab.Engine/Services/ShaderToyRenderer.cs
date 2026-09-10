@@ -74,8 +74,10 @@ void main()
         LastCompileMessage = copyResult;
 
         _currentFragmentSource = initialFragment;
-        Compile(initialFragment);
+        if (!copyResult.Success)
+            throw new InvalidOperationException($"Falha no shader interno de vídeo: {copyResult.Message}");
         _initialized = true;
+        Compile(initialFragment);
     }
 
     public IReadOnlyList<ModelAsset> DiscoverModels(string modelsDirectory)
