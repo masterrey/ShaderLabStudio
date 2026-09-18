@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
@@ -25,6 +26,8 @@ public partial class MainWindow : Window
     private const double MinEditorFontSize = 10d;
     private const double MaxEditorFontSize = 30d;
     private const double EditorFontStep = 1d;
+    private const string Indentation = "    ";
+    private const int EditorUndoLimit = 100;
     
     // Theme Support
     private enum AppThemeMode { Dark, Light }
@@ -164,6 +167,13 @@ public partial class MainWindow : Window
         }
 
         SetupLineNumberScrollSync();
+
+        // Keep a deep undo history so Ctrl+Z covers many edits instead of just one.
+        EditorTextBox.UndoLimit = EditorUndoLimit;
+        VertexEditorTextBox.UndoLimit = EditorUndoLimit;
+        EditorTextBox.IsUndoEnabled = true;
+        VertexEditorTextBox.IsUndoEnabled = true;
+
         _autoSaveTimer.Start();
         _filePollTimer.Start();
     }
@@ -359,6 +369,181 @@ public partial class MainWindow : Window
 
         _compileDebounceTimer.Stop();
         _compileDebounceTimer.Start();
+    }
+
+    private void EditorTextBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key != Key.Tab || sender is not WpfRichTextBox editor)
+        {
+            return;
+        }
+
+        // Indent code instead of moving focus to the next control.
+        if ((Keyboard.Modifiers & ModifierKeys.Shift) != 0)
+        {
+            OutdentSelection(editor);
+        }
+        else
+        {
+            IndentSelection(editor);
+        }
+
+        e.Handled = true;
+    }
+
+    private void IndentSelection(WpfRichTextBox editor)
+    {
+        var selection = editor.Selection;
+        var text = GetEditorText(editor);
+        GetSelectionOffsets(editor, out var selStart, out var selEnd);
+
+        if (selection.IsEmpty)
+        {
+            // Caret without selection: insert indentation in place.
+            selection.Text = Indentation;
+            editor.CaretPosition = selection.End;
+            return;
+        }
+
+        var lineStart = FindLineStart(text, selStart);
+        var range = new TextRange(
+            GetTextPointerAtOffset(editor.Document, lineStart),
+            GetTextPointerAtOffset(editor.Document, selEnd));
+        var block = range.Text;
+        var indented = IndentLines(block);
+        range.Text = indented;
+
+        // Reselect the same lines so repeated Tab keeps indenting them.
+        selection.Select(
+            GetTextPointerAtOffset(editor.Document, lineStart),
+            GetTextPointerAtOffset(editor.Document, lineStart + indented.Length));
+    }
+
+    private void OutdentSelection(WpfRichTextBox editor)
+    {
+        var selection = editor.Selection;
+        var text = GetEditorText(editor);
+        GetSelectionOffsets(editor, out var selStart, out var selEnd);
+
+        var lineStart = FindLineStart(text, selStart);
+        var rangeEnd = selEnd;
+        if (selection.IsEmpty)
+        {
+            // Caret without selection: outdent the whole current line.
+            var nextNewline = text.IndexOf('\n', lineStart);
+            rangeEnd = nextNewline < 0 ? text.Length : nextNewline;
+        }
+
+        var range = new TextRange(
+            GetTextPointerAtOffset(editor.Document, lineStart),
+            GetTextPointerAtOffset(editor.Document, rangeEnd));
+        var block = range.Text;
+        var outdented = OutdentLines(block, out var removedFirstLine, out var removedTotal);
+        if (removedTotal == 0)
+        {
+            return;
+        }
+
+        range.Text = outdented;
+
+        if (selection.IsEmpty)
+        {
+            var column = selStart - lineStart;
+            var newColumn = Math.Max(0, column - Math.Min(column, removedFirstLine));
+            editor.CaretPosition = GetTextPointerAtOffset(editor.Document, lineStart + newColumn);
+            return;
+        }
+
+        var newStart = selStart == lineStart
+            ? lineStart
+            : selStart - Math.Min(selStart - lineStart, removedFirstLine);
+        var newEnd = Math.Max(newStart, selEnd - removedTotal);
+        selection.Select(
+            GetTextPointerAtOffset(editor.Document, newStart),
+            GetTextPointerAtOffset(editor.Document, newEnd));
+    }
+
+    private static string IndentLines(string block)
+    {
+        var lines = block.Split("\r\n");
+        var result = new System.Text.StringBuilder(block.Length + lines.Length * Indentation.Length);
+        for (var i = 0; i < lines.Length; i++)
+        {
+            if (i > 0)
+            {
+                result.Append("\r\n");
+            }
+
+            // Skip empty lines, mirroring common code editors.
+            if (lines[i].Length > 0)
+            {
+                result.Append(Indentation);
+            }
+
+            result.Append(lines[i]);
+        }
+
+        return result.ToString();
+    }
+
+    private static string OutdentLines(string block, out int removedFirstLine, out int removedTotal)
+    {
+        var lines = block.Split("\r\n");
+        var result = new System.Text.StringBuilder(block.Length);
+        removedFirstLine = 0;
+        removedTotal = 0;
+
+        for (var i = 0; i < lines.Length; i++)
+        {
+            if (i > 0)
+            {
+                result.Append("\r\n");
+            }
+
+            var line = lines[i];
+            var removed = 0;
+            if (line.StartsWith(Indentation, StringComparison.Ordinal))
+            {
+                removed = Indentation.Length;
+            }
+            else if (line.StartsWith('\t'))
+            {
+                removed = 1;
+            }
+
+            if (i == 0)
+            {
+                removedFirstLine = removed;
+            }
+
+            removedTotal += removed;
+            result.Append(line, removed, line.Length - removed);
+        }
+
+        return result.ToString();
+    }
+
+    private static void GetSelectionOffsets(WpfRichTextBox editor, out int start, out int end)
+    {
+        var document = editor.Document;
+        start = new TextRange(document.ContentStart, editor.Selection.Start).Text.Length;
+        end = new TextRange(document.ContentStart, editor.Selection.End).Text.Length;
+        if (start > end)
+        {
+            (start, end) = (end, start);
+        }
+    }
+
+    private static int FindLineStart(string text, int offset)
+    {
+        var clamped = Math.Clamp(offset, 0, text.Length);
+        if (clamped == 0)
+        {
+            return 0;
+        }
+
+        var newline = text.LastIndexOf('\n', clamped - 1, clamped);
+        return newline < 0 ? 0 : newline + 1;
     }
 
     private void EditorTextBox_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
@@ -633,7 +818,7 @@ public partial class MainWindow : Window
 
         var dialog = new Microsoft.Win32.OpenFileDialog
         {
-            Filter = "Image Files|*.png;*.jpg;*.jpeg;*.bmp;*.tga",
+            Filter = "Images & Videos|*.png;*.jpg;*.jpeg;*.bmp;*.tga;*.mp4;*.mov;*.avi;*.mkv;*.webm;*.wmv;*.m4v;*.mpg;*.mpeg|Image Files|*.png;*.jpg;*.jpeg;*.bmp;*.tga|Video Files|*.mp4;*.mov;*.avi;*.mkv;*.webm;*.wmv;*.m4v;*.mpg;*.mpeg",
             CheckFileExists = true
         };
 
@@ -1125,10 +1310,15 @@ public partial class MainWindow : Window
         try
         {
             var document = editor.Document;
-            var defaultForeground = _currentTheme == AppThemeMode.Dark 
-                ? CreateBrush("#D4D4D4") 
+
+            // Merge all highlighting changes into a single undo unit so Ctrl+Z undoes
+            // the actual typing instead of stepping through color reapplications.
+            GetUndoManager(editor)?.InvokeMethod("DeclareChangeBlock");
+
+            var defaultForeground = _currentTheme == AppThemeMode.Dark
+                ? CreateBrush("#D4D4D4")
                 : CreateBrush("#000000");
-                
+
             var fullRange = new TextRange(document.ContentStart, document.ContentEnd);
             fullRange.ApplyPropertyValue(TextElement.ForegroundProperty, defaultForeground);
             fullRange.ApplyPropertyValue(TextElement.FontWeightProperty, FontWeights.Normal);
@@ -1159,6 +1349,25 @@ public partial class MainWindow : Window
         {
             _isApplyingSyntaxHighlighting = false;
         }
+    }
+
+    private static UndoManagerRef? GetUndoManager(WpfRichTextBox editor)
+    {
+        // RichTextBox does not expose its UndoManager publicly.
+        const BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Instance;
+        var manager = editor.GetType().GetProperty("UndoManager", flags)?.GetValue(editor)
+            ?? editor.GetType().GetField("_undoManager", flags)?.GetValue(editor);
+        return manager is null ? null : new UndoManagerRef(manager);
+    }
+
+    private sealed class UndoManagerRef
+    {
+        private readonly object _instance;
+
+        public UndoManagerRef(object instance) => _instance = instance;
+
+        public void InvokeMethod(string name) =>
+            _instance.GetType().GetMethod(name, BindingFlags.Public | BindingFlags.Instance)?.Invoke(_instance, null);
     }
 
     private static TextPointer GetTextPointerAtOffset(FlowDocument document, int offset)

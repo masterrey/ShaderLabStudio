@@ -110,6 +110,7 @@
                                              VerticalScrollBarVisibility="Auto"
                                              HorizontalScrollBarVisibility="Auto"
                                              PreviewMouseWheel="EditorTextBox_PreviewMouseWheel"
+                                             PreviewKeyDown="EditorTextBox_PreviewKeyDown"
                                              TextChanged="EditorTextBox_TextChanged"
                                              Background="{DynamicResource EditorBackgroundBrush}"
                                              Foreground="{DynamicResource EditorForegroundBrush}"/>
@@ -144,6 +145,7 @@
                                              VerticalScrollBarVisibility="Auto"
                                              HorizontalScrollBarVisibility="Auto"
                                              PreviewMouseWheel="EditorTextBox_PreviewMouseWheel"
+                                             PreviewKeyDown="EditorTextBox_PreviewKeyDown"
                                              TextChanged="EditorTextBox_TextChanged"
                                              Background="{DynamicResource EditorBackgroundBrush}"
                                              Foreground="{DynamicResource EditorForegroundBrush}"/>

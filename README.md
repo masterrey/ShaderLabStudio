@@ -114,10 +114,12 @@ When you open ShaderLabStudio Studio, you will see five main areas.
 - Aba **Fragment Shader**: código principal do efeito visual / main code for the visual effect
 - Aba **Vertex Shader (3D)**: código de vértice para cenários 3D / vertex code for 3D scenarios
 - Edição em tempo real com compilação rápida / real-time editing with fast compilation
+- **Tab** indenta o código e **Shift+Tab** remove indentação (funciona com várias linhas selecionadas) / **Tab** indents code and **Shift+Tab** outdents (works with multiple selected lines)
+- **Ctrl+Z / Ctrl+Y**: desfazer/refazer com histórico de várias etapas / undo/redo with multi-step history
 
 3. **Preview (lado direito) / Preview (right side)**
 - Área de renderização OpenGL com resultado visual imediato / OpenGL rendering area with immediate visual feedback
-- Botões `Load iChannel0` a `Load iChannel3` para carregar texturas e canais auxiliares / buttons `Load iChannel0` through `Load iChannel3` for auxiliary textures and channels
+- Botões `Load iChannel0` a `Load iChannel3` para carregar texturas, vídeos e canais auxiliares (vídeos exigem o `ffmpeg` instalado ou um `ffmpeg.exe` ao lado do app) / buttons `Load iChannel0` through `Load iChannel3` for auxiliary textures and videos (videos require `ffmpeg` installed or an `ffmpeg.exe` next to the app)
 
 4. **Diagnostics (parte inferior) / Diagnostics (bottom area)**
 - Exibe mensagens de compilação, erros e avisos / shows compile messages, errors, and warnings

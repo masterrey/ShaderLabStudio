@@ -22,6 +22,8 @@ public sealed class ShaderToyRenderer : IDisposable
     private RenderBuffer? _frontBuffer;
     private RenderBuffer? _backBuffer;
     private readonly Dictionary<int, int> _channelTextures = new();
+    private readonly Dictionary<int, VideoTextureSource> _channelVideos = new();
+    private readonly Dictionary<int, byte[]> _channelVideoPixels = new();
     private ModelGeometry? _model;
     private bool _initialized;
     private int _width;
@@ -245,6 +247,12 @@ void main()
             _channelTextures.Remove(channel);
         }
 
+        if (_channelVideos.Remove(channel, out var oldVideo))
+        {
+            oldVideo.Dispose();
+            _channelVideoPixels.Remove(channel);
+        }
+
         if (string.IsNullOrWhiteSpace(path))
         {
             message = $"Cleared iChannel{channel}.";
@@ -257,6 +265,11 @@ void main()
             return false;
         }
 
+        if (VideoTextureSource.IsVideoFile(path))
+        {
+            return TrySetChannelVideo(channel, path, out message);
+        }
+
         try
         {
             using var image = Image.Load<Rgba32>(path);
@@ -264,16 +277,7 @@ void main()
             var pixels = new byte[image.Width * image.Height * 4];
             image.CopyPixelDataTo(pixels);
 
-            int texId = GL.GenTexture();
-            GL.BindTexture(TextureTarget.Texture2D, texId);
-            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, image.Width, image.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, pixels);
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.LinearMipmapLinear);
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.Repeat);
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.Repeat);
-            GL.GenerateMipmap(GenerateMipmapTarget.Texture2D);
-            GL.BindTexture(TextureTarget.Texture2D, 0);
-
+            int texId = CreateTexture2D(image.Width, image.Height, pixels, useMipmaps: true);
             _channelTextures[channel] = texId;
             message = $"Loaded iChannel{channel}: {Path.GetFileName(path)}";
             return true;
@@ -283,6 +287,70 @@ void main()
             message = ex.Message;
             return false;
         }
+    }
+
+    private bool TrySetChannelVideo(int channel, string path, out string message)
+    {
+        if (!VideoTextureSource.TryCreate(path, out var video, out message) || video is null)
+        {
+            return false;
+        }
+
+        var pixels = new byte[video.FrameByteCount];
+        if (!video.TryReadNextFrame(pixels))
+        {
+            video.Dispose();
+            message = $"Video has no frames: {Path.GetFileName(path)}";
+            return false;
+        }
+
+        int texId = CreateTexture2D(video.Width, video.Height, pixels, useMipmaps: false);
+        _channelTextures[channel] = texId;
+        _channelVideos[channel] = video;
+        _channelVideoPixels[channel] = pixels;
+        message = $"Loaded iChannel{channel} video: {Path.GetFileName(path)} ({video.Width}x{video.Height})";
+        return true;
+    }
+
+    private static int CreateTexture2D(int width, int height, byte[]? pixels, bool useMipmaps)
+    {
+        int texId = GL.GenTexture();
+        GL.BindTexture(TextureTarget.Texture2D, texId);
+        GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, width, height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, pixels);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)(useMipmaps ? TextureMinFilter.LinearMipmapLinear : TextureMinFilter.Linear));
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.Repeat);
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.Repeat);
+        if (useMipmaps)
+        {
+            GL.GenerateMipmap(GenerateMipmapTarget.Texture2D);
+        }
+        GL.BindTexture(TextureTarget.Texture2D, 0);
+        return texId;
+    }
+
+    private void AdvanceVideoChannels()
+    {
+        if (_isPaused || _channelVideos.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var (channel, video) in _channelVideos)
+        {
+            if (!_channelVideoPixels.TryGetValue(channel, out var pixels))
+            {
+                continue;
+            }
+
+            if (video.TryReadNextFrame(pixels) && _channelTextures.TryGetValue(channel, out int texId))
+            {
+                GL.BindTexture(TextureTarget.Texture2D, texId);
+                GL.TexSubImage2D(TextureTarget.Texture2D, 0, 0, 0, video.Width, video.Height, PixelFormat.Rgba, PixelType.UnsignedByte, pixels);
+            }
+        }
+
+        GL.BindTexture(TextureTarget.Texture2D, 0);
     }
 
     public void Resize(int width, int height)
@@ -310,6 +378,8 @@ void main()
                 _rotationY += (float)elapsedSeconds * 30.0f;
             }
         }
+
+        AdvanceVideoChannels();
 
         RenderToBuffer(_frontBuffer, _backBuffer.TextureId);
 
@@ -457,6 +527,14 @@ void main()
         }
 
         _channelTextures.Clear();
+
+        foreach (var video in _channelVideos.Values)
+        {
+            video.Dispose();
+        }
+
+        _channelVideos.Clear();
+        _channelVideoPixels.Clear();
 
         _frontBuffer?.Dispose();
         _backBuffer?.Dispose();
