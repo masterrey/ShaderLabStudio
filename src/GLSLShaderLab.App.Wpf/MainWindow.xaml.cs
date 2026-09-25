@@ -26,7 +26,6 @@ public partial class MainWindow : Window
     private const double MaxEditorFontSize = 30d;
     private const double EditorFontStep = 1d;
     private const string Indentation = "    ";
-    private const int EditorUndoLimit = 100;
     
     // Theme Support
     private enum AppThemeMode { Dark, Light }
@@ -65,6 +64,9 @@ public partial class MainWindow : Window
     private bool _isOrbitingCamera;
     private System.Drawing.Point _lastMousePosition;
     private bool _isApplyingSyntaxHighlighting;
+    private readonly Dictionary<WpfRichTextBox, string> _editorTextStates = new();
+    private readonly Dictionary<WpfRichTextBox, Stack<string>> _editorUndoHistory = new();
+    private readonly Dictionary<WpfRichTextBox, Stack<string>> _editorRedoHistory = new();
 
     private (Regex Pattern, WpfBrush Brush, FontWeight? Weight)[] GetGlslHighlightRules()
     {
@@ -153,6 +155,8 @@ public partial class MainWindow : Window
         Update3DControlsState();
         _renderer.SetPaused(_document.IsPaused);
         PlayPauseButton.Content = _document.IsPaused ? "Play" : "Pause";
+        AutoRotateCheckBox.IsChecked = _document.AutoRotateModel;
+        _renderer.SetModelAutoRotation(_document.AutoRotateModel);
 
         if (_document.IsFullscreen)
         {
@@ -166,12 +170,6 @@ public partial class MainWindow : Window
         }
 
         SetupLineNumberScrollSync();
-
-        // Keep a deep undo history so Ctrl+Z covers many edits instead of just one.
-        EditorTextBox.UndoLimit = EditorUndoLimit;
-        VertexEditorTextBox.UndoLimit = EditorUndoLimit;
-        EditorTextBox.IsUndoEnabled = true;
-        VertexEditorTextBox.IsUndoEnabled = true;
 
         _autoSaveTimer.Start();
         _filePollTimer.Start();
@@ -349,6 +347,7 @@ public partial class MainWindow : Window
     {
         if (!_isApplyingSyntaxHighlighting && sender is WpfRichTextBox editor)
         {
+            RecordEditorChange(editor);
             ApplySyntaxHighlighting(editor);
 
             if (editor == EditorTextBox)
@@ -372,7 +371,26 @@ public partial class MainWindow : Window
 
     private void EditorTextBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
-        if (e.Key != Key.Tab || sender is not WpfRichTextBox editor)
+        if (sender is not WpfRichTextBox editor)
+        {
+            return;
+        }
+
+        if ((Keyboard.Modifiers & ModifierKeys.Control) != 0 && e.Key == Key.Z)
+        {
+            UndoEditorChange(editor);
+            e.Handled = true;
+            return;
+        }
+
+        if ((Keyboard.Modifiers & ModifierKeys.Control) != 0 && e.Key == Key.Y)
+        {
+            RedoEditorChange(editor);
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key != Key.Tab)
         {
             return;
         }
@@ -740,6 +758,10 @@ public partial class MainWindow : Window
     private void LoadChannel1_Click(object sender, RoutedEventArgs e) => LoadChannel(1);
     private void LoadChannel2_Click(object sender, RoutedEventArgs e) => LoadChannel(2);
     private void LoadChannel3_Click(object sender, RoutedEventArgs e) => LoadChannel(3);
+    private void ClearChannel0_Click(object sender, RoutedEventArgs e) => ClearChannel(0);
+    private void ClearChannel1_Click(object sender, RoutedEventArgs e) => ClearChannel(1);
+    private void ClearChannel2_Click(object sender, RoutedEventArgs e) => ClearChannel(2);
+    private void ClearChannel3_Click(object sender, RoutedEventArgs e) => ClearChannel(3);
 
     private void WebcamChannel0_Click(object sender, RoutedEventArgs e) => SelectWebcamChannel(0);
     private void WebcamChannel1_Click(object sender, RoutedEventArgs e) => SelectWebcamChannel(1);
@@ -837,6 +859,18 @@ public partial class MainWindow : Window
         AppendDiagnostic("Camera reset.");
     }
 
+    private void AutoRotateCheckBox_OnChanged(object sender, RoutedEventArgs e)
+    {
+        if (!IsLoaded)
+        {
+            return;
+        }
+
+        _document.AutoRotateModel = AutoRotateCheckBox.IsChecked == true;
+        _renderer.SetModelAutoRotation(_document.AutoRotateModel);
+        _sessionStore.Save(_document);
+    }
+
     private void ThemeToggleButton_Click(object sender, RoutedEventArgs e)
     {
         _currentTheme = _currentTheme == AppThemeMode.Dark ? AppThemeMode.Light : AppThemeMode.Dark;
@@ -904,6 +938,28 @@ public partial class MainWindow : Window
         if (_videoFailed || _glControl is null)
         {
             return;
+        }
+
+        private void ClearChannel(int channel) => RunVideoAction(() => ClearChannelCore(channel));
+
+        private void ClearChannelCore(int channel)
+        {
+            if (_videoFailed || _glControl is null)
+            {
+                return;
+            }
+
+            _glControl.MakeCurrent();
+            var ok = _renderer.TrySetChannelTexture(channel, null, out var message);
+            AppendDiagnostic(message);
+            if (!ok)
+            {
+                return;
+            }
+
+            _document.Channels.First(c => c.Index == channel).TexturePath = null;
+            _sessionStore.Save(_document);
+            StatusTextBlock.Text = $"iChannel{channel} using buffer";
         }
 
         var dialog = new Microsoft.Win32.OpenFileDialog
@@ -1185,6 +1241,7 @@ public partial class MainWindow : Window
         _document.VertexSource = GetEditorText(VertexEditorTextBox);
         _document.AutoCompile = AutoCompileCheckBox.IsChecked == true;
         _document.IsFullscreen = _isFullscreen;
+        _document.AutoRotateModel = AutoRotateCheckBox.IsChecked == true;
         _document.SelectedModelPath = _renderer.CurrentModelPath;
         _sessionStore.Save(_document);
 
@@ -1326,6 +1383,7 @@ public partial class MainWindow : Window
         var is3d = _document.RenderMode == RenderMode.ThreeD;
         ModelComboBox.IsEnabled = is3d && _availableModels.Count > 0;
         ResetCameraButton.IsEnabled = is3d;
+        AutoRotateCheckBox.IsEnabled = is3d;
         VertexEditorTab.IsEnabled = is3d;
     }
 
@@ -1350,7 +1408,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void SetEditorText(WpfRichTextBox editor, string text)
+    private void SetEditorText(WpfRichTextBox editor, string text, bool resetUndoHistory = true)
     {
         _isApplyingSyntaxHighlighting = true;
         try
@@ -1381,6 +1439,67 @@ public partial class MainWindow : Window
         {
             UpdateLineNumbers(VertexEditorTextBox, VertexEditorLineNumbers);
         }
+
+        if (resetUndoHistory)
+        {
+            ResetEditorHistory(editor, text);
+        }
+    }
+
+    private void RecordEditorChange(WpfRichTextBox editor)
+    {
+        var currentText = GetEditorText(editor);
+        if (_editorTextStates.TryGetValue(editor, out var previousText) && previousText != currentText)
+        {
+            GetHistory(_editorUndoHistory, editor).Push(previousText);
+            GetHistory(_editorRedoHistory, editor).Clear();
+        }
+
+        _editorTextStates[editor] = currentText;
+    }
+
+    private void UndoEditorChange(WpfRichTextBox editor)
+    {
+        var undoHistory = GetHistory(_editorUndoHistory, editor);
+        if (undoHistory.Count == 0)
+        {
+            return;
+        }
+
+        GetHistory(_editorRedoHistory, editor).Push(GetEditorText(editor));
+        SetEditorText(editor, undoHistory.Pop(), resetUndoHistory: false);
+        _editorTextStates[editor] = GetEditorText(editor);
+    }
+
+    private void RedoEditorChange(WpfRichTextBox editor)
+    {
+        var redoHistory = GetHistory(_editorRedoHistory, editor);
+        if (redoHistory.Count == 0)
+        {
+            return;
+        }
+
+        GetHistory(_editorUndoHistory, editor).Push(GetEditorText(editor));
+        SetEditorText(editor, redoHistory.Pop(), resetUndoHistory: false);
+        _editorTextStates[editor] = GetEditorText(editor);
+    }
+
+    private void ResetEditorHistory(WpfRichTextBox editor, string text)
+    {
+        _editorTextStates[editor] = text;
+        GetHistory(_editorUndoHistory, editor).Clear();
+        GetHistory(_editorRedoHistory, editor).Clear();
+    }
+
+    private static Stack<string> GetHistory(Dictionary<WpfRichTextBox, Stack<string>> histories, WpfRichTextBox editor)
+    {
+        if (!histories.TryGetValue(editor, out var history))
+        {
+            history = new Stack<string>();
+            histories[editor] = history;
+        }
+
+        return history;
     }
 
     private static string GetEditorText(WpfRichTextBox editor)
@@ -1578,4 +1697,3 @@ public partial class MainWindow : Window
         return brush;
     }
 }
-

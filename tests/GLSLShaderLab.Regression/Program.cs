@@ -32,6 +32,16 @@ internal static class Program
         var pointerMethod = typeof(MainWindow).GetMethod("GetTextPointerAtOffset", BindingFlags.NonPublic | BindingFlags.Static)!;
         var pointer = (TextPointer)pointerMethod.Invoke(null, new object[] { editor.Document, 7 })!;
         Check(new TextRange(pointer, editor.Document.ContentEnd).Text.StartsWith("second"), "paragraph offset");
+        var setEditorText = typeof(MainWindow).GetMethod("SetEditorText", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        setEditorText.Invoke(window, new object[] { editor, "original", true });
+        editor.CaretPosition = editor.Document.ContentEnd;
+        editor.Selection.Text = " edit";
+        var undoEditorChange = typeof(MainWindow).GetMethod("UndoEditorChange", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        undoEditorChange.Invoke(window, new object[] { editor });
+        Check(new TextRange(editor.Document.ContentStart, editor.Document.ContentEnd).Text.StartsWith("original"), "editor undo restores previous edit");
+        var redoEditorChange = typeof(MainWindow).GetMethod("RedoEditorChange", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        redoEditorChange.Invoke(window, new object[] { editor });
+        Check(new TextRange(editor.Document.ContentStart, editor.Document.ContentEnd).Text.StartsWith("original edit"), "editor redo restores undone edit");
         var guard = typeof(MainWindow).GetMethod("RunVideoAction", BindingFlags.NonPublic | BindingFlags.Instance)!;
         guard.Invoke(window, new object[] { (Action)(() => throw new InvalidOperationException("simulated graphics failure")) });
         Check(((TextBlock)window.FindName("StatusTextBlock")).Text.Contains("salvar"), "editor survives graphics failure");
@@ -44,8 +54,7 @@ internal static class Program
         var integrationPath = Path.Combine(Path.GetTempPath(), "ShaderLab-" + Guid.NewGuid() + ".frag");
         try
         {
-            var setText = typeof(MainWindow).GetMethod("SetEditorText", BindingFlags.NonPublic | BindingFlags.Instance)!;
-            setText.Invoke(window, new object[] { editor, "original" });
+            setEditorText.Invoke(window, new object[] { editor, "original", true });
             File.WriteAllText(integrationPath, "external shader");
             typeof(MainWindow).GetField("_fragmentFile", BindingFlags.NonPublic | BindingFlags.Instance)!
                 .SetValue(window, new ShaderFileSync(integrationPath, "original"));
