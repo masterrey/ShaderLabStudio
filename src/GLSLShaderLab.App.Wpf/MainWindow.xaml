@@ -46,6 +46,7 @@
                 <TextBlock Text="Model:" VerticalAlignment="Center" Margin="12,0,4,0"/>
                 <ComboBox Name="ModelComboBox" Width="120" SelectionChanged="ModelComboBox_SelectionChanged" Padding="4" VerticalAlignment="Center"/>
                 <Button Name="ResetCameraButton" Content="🎯 Reset Cam" Click="ResetCameraButton_Click" Padding="8,4" Margin="4,2"/>
+                <CheckBox Name="AutoRotateCheckBox" Content="Auto Rotate" Checked="AutoRotateCheckBox_OnChanged" Unchecked="AutoRotateCheckBox_OnChanged" Margin="4,0" VerticalAlignment="Center"/>
                 <Separator Style="{DynamicResource {x:Static ToolBar.SeparatorStyleKey}}" Margin="4,0"/>
                 <TextBlock Text="Template:" VerticalAlignment="Center" Margin="4,0"/>
                 <ComboBox Name="TemplateComboBox" Width="120" SelectionChanged="TemplateComboBox_SelectionChanged" Padding="4" VerticalAlignment="Center"/>
@@ -180,6 +181,12 @@
                         <Button Content="📷 Webcam 2" Click="WebcamChannel2_Click" Margin="2" Padding="6,4"/>
                         <Button Content="📷 Webcam 3" Click="WebcamChannel3_Click" Margin="2" Padding="6,4"/>
                     </UniformGrid>
+                    <UniformGrid Columns="4" Margin="0,4,0,0">
+                        <Button Content="Clear iChannel0" Click="ClearChannel0_Click" Margin="2" Padding="6,4"/>
+                        <Button Content="Clear iChannel1" Click="ClearChannel1_Click" Margin="2" Padding="6,4"/>
+                        <Button Content="Clear iChannel2" Click="ClearChannel2_Click" Margin="2" Padding="6,4"/>
+                        <Button Content="Clear iChannel3" Click="ClearChannel3_Click" Margin="2" Padding="6,4"/>
+                    </UniformGrid>
                 </StackPanel>
             </Grid>
 
@@ -212,4 +219,3 @@
         </Grid>
     </DockPanel>
 </Window>
-

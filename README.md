@@ -107,7 +107,7 @@ When you open ShaderLabStudio Studio, you will see five main areas.
 - `Open`, `Save`, `Save As`: abrir e salvar shaders / open and save shaders
 - `Compile` e `Auto`: compilar manualmente ou automaticamente durante a edição / compile manually or automatically while editing
 - `Pause`, `Reset Time`, `Fullscreen`: controlar animação e visualização / control animation and viewing
-- `Mode` (2D / 3D), `Model`, `Reset Camera`: fluxo para renderização 2D e 3D / workflow for 2D and 3D rendering
+- `Mode` (2D / 3D), `Model`, `Reset Camera`, `Auto Rotate`: fluxo para renderização 2D e 3D, incluindo pausar a rotação automática do modelo / workflow for 2D and 3D rendering, including pausing automatic model rotation
 - `Template`: carregar templates de shader para estudo / load shader templates for study
 
 2. **Editor de Shader (lado esquerdo) / Shader Editor (left side)**
@@ -119,7 +119,7 @@ When you open ShaderLabStudio Studio, you will see five main areas.
 
 3. **Preview (lado direito) / Preview (right side)**
 - Área de renderização OpenGL com resultado visual imediato / OpenGL rendering area with immediate visual feedback
-- Botões `Load iChannel0` a `Load iChannel3` para carregar texturas, vídeos e canais auxiliares (vídeos exigem o `ffmpeg` instalado ou um `ffmpeg.exe` ao lado do app) / buttons `Load iChannel0` through `Load iChannel3` for auxiliary textures and videos (videos require `ffmpeg` installed or an `ffmpeg.exe` next to the app)
+- Botões `Load iChannel0` a `Load iChannel3` para carregar texturas, vídeos e canais auxiliares, e `Clear iChannel` para voltar o canal ao buffer (vídeos exigem o `ffmpeg` instalado ou um `ffmpeg.exe` ao lado do app) / buttons `Load iChannel0` through `Load iChannel3` load auxiliary textures and videos, while `Clear iChannel` returns the channel to the buffer (videos require `ffmpeg` installed or an `ffmpeg.exe` next to the app)
 
 4. **Diagnostics (parte inferior) / Diagnostics (bottom area)**
 - Exibe mensagens de compilação, erros e avisos / shows compile messages, errors, and warnings

@@ -9,6 +9,7 @@ public sealed class ShaderDocument
     public string FragmentSource { get; set; } = string.Empty;
     public bool AutoCompile { get; set; } = true;
     public bool IsPaused { get; set; }
+    public bool AutoRotateModel { get; set; } = true;
     public bool IsFullscreen { get; set; }
     public int ResolutionWidth { get; set; } = 1280;
     public int ResolutionHeight { get; set; } = 720;

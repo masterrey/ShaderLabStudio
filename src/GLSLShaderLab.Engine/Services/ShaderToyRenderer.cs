@@ -43,6 +43,7 @@ public sealed class ShaderToyRenderer : IDisposable
     private float _pitch;
     private float _fov = 45.0f;
     private float _rotationY;
+    private bool _autoRotateModel = true;
 
     public RenderMode Mode { get; private set; } = RenderMode.TwoD;
     public string? CurrentModelPath { get; private set; }
@@ -177,6 +178,8 @@ void main()
     }
 
     public void SetPaused(bool paused) => _isPaused = paused;
+
+    public void SetModelAutoRotation(bool enabled) => _autoRotateModel = enabled;
 
     public void ResetTime() => _time = 0f;
 
@@ -423,7 +426,7 @@ void main()
         if (!_isPaused)
         {
             _time += (float)elapsedSeconds;
-            if (Mode == RenderMode.ThreeD)
+            if (Mode == RenderMode.ThreeD && _autoRotateModel)
             {
                 _rotationY += (float)elapsedSeconds * 30.0f;
             }
