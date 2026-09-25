@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\GLSLShaderLab.Core\GLSLShaderLab.Core.csproj" />
@@ -16,5 +16,17 @@
     <PackageReference Include="OpenTK" Version="4.9.3" />
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
   </ItemGroup>
+
+  <!--
+    Ensures native DLLs (assimp.dll, etc.) are copied to the output root
+    so that P/Invoke / LoadLibrary can find them on every machine,
+    not just those where the .NET runtime RID resolution works.
+  -->
+  <Target Name="CopyNativeDependencies" AfterTargets="Build" Condition="'$(RuntimeIdentifier)' == '' Or $([System.String]::IsNullOrEmpty('$(RuntimeIdentifier)'))">
+    <ItemGroup>
+      <_NativeLibsToCopy Include="$(NuGetPackageRoot)assimpnet\*/runtimes\win-x64\native\*.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_NativeLibsToCopy)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="false" OverwriteReadOnlyFiles="true" />
+  </Target>
 
 </Project>

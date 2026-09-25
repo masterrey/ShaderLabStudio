@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\GLSLShaderLab.Core\GLSLShaderLab.Core.csproj" />
@@ -18,6 +18,14 @@
 
   <ItemGroup>
     <PackageReference Include="OpenTK.GLControl" Version="4.0.2" />
+  </ItemGroup>
+
+  <!-- Ensure native DLLs land in the app root so P/Invoke finds them on every machine -->
+  <ItemGroup>
+    <Content Include="$(NuGetPackageRoot)assimpnet\5.0.0-beta1\runtimes\win-x64\native\assimp.dll"
+            Link="assimp.dll"
+            CopyToOutputDirectory="PreserveNewest"
+            Condition="Exists('$(NuGetPackageRoot)assimpnet\\5.0.0-beta1\\runtimes\\win-x64\\native\\assimp.dll')" />
   </ItemGroup>
 
 </Project>
