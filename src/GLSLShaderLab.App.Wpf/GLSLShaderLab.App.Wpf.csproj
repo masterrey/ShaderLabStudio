@@ -20,6 +20,11 @@
     <PackageReference Include="OpenTK.GLControl" Version="4.0.2" />
   </ItemGroup>
 
+  <!-- Embed the .ico as a WPF resource so Icon="Assets/ShaderLabStudio.ico" resolves at runtime -->
+  <ItemGroup>
+    <Resource Include="Assets\ShaderLabStudio.ico" />
+  </ItemGroup>
+
   <!-- Ensure native DLLs land in the app root so P/Invoke finds them on every machine -->
   <ItemGroup>
     <Content Include="$(NuGetPackageRoot)assimpnet\5.0.0-beta1\runtimes\win-x64\native\assimp.dll"
