@@ -7,7 +7,7 @@ namespace GLSLShaderLab.Engine.Services;
 /// Decodes a video file into raw RGBA frames by piping from an external ffmpeg process,
 /// so iChannel inputs can be fed by video instead of static images.
 /// </summary>
-public sealed class VideoTextureSource : IDisposable
+public sealed class VideoTextureSource : IChannelFrameSource
 {
     private static readonly HashSet<string> VideoExtensions = new(StringComparer.OrdinalIgnoreCase)
     {

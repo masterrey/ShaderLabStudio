@@ -167,12 +167,20 @@
                     <wf:WindowsFormsHost Name="PreviewHost"/>
                 </Border>
 
-                <UniformGrid Name="ChannelButtonsGrid" Grid.Row="2" Columns="4" Margin="0,8,0,0" HorizontalAlignment="Stretch">
-                    <Button Content="Load iChannel0" Click="LoadChannel0_Click" Margin="2" Padding="6,4"/>
-                    <Button Content="Load iChannel1" Click="LoadChannel1_Click" Margin="2" Padding="6,4"/>
-                    <Button Content="Load iChannel2" Click="LoadChannel2_Click" Margin="2" Padding="6,4"/>
-                    <Button Content="Load iChannel3" Click="LoadChannel3_Click" Margin="2" Padding="6,4"/>
-                </UniformGrid>
+                <StackPanel Name="ChannelButtonsGrid" Grid.Row="2" Margin="0,8,0,0" HorizontalAlignment="Stretch">
+                    <UniformGrid Columns="4" Margin="0,0,0,4">
+                        <Button Content="Load iChannel0" Click="LoadChannel0_Click" Margin="2" Padding="6,4"/>
+                        <Button Content="Load iChannel1" Click="LoadChannel1_Click" Margin="2" Padding="6,4"/>
+                        <Button Content="Load iChannel2" Click="LoadChannel2_Click" Margin="2" Padding="6,4"/>
+                        <Button Content="Load iChannel3" Click="LoadChannel3_Click" Margin="2" Padding="6,4"/>
+                    </UniformGrid>
+                    <UniformGrid Columns="4" Margin="0,4,0,0">
+                        <Button Content="📷 Webcam 0" Click="WebcamChannel0_Click" Margin="2" Padding="6,4"/>
+                        <Button Content="📷 Webcam 1" Click="WebcamChannel1_Click" Margin="2" Padding="6,4"/>
+                        <Button Content="📷 Webcam 2" Click="WebcamChannel2_Click" Margin="2" Padding="6,4"/>
+                        <Button Content="📷 Webcam 3" Click="WebcamChannel3_Click" Margin="2" Padding="6,4"/>
+                    </UniformGrid>
+                </StackPanel>
             </Grid>
 
             <Grid Grid.Row="1" Grid.ColumnSpan="2" Margin="8" Name="DiagnosticsGroupBox">

@@ -22,7 +22,7 @@ public sealed class ShaderToyRenderer : IDisposable
     private RenderBuffer? _frontBuffer;
     private RenderBuffer? _backBuffer;
     private readonly Dictionary<int, int> _channelTextures = new();
-    private readonly Dictionary<int, VideoTextureSource> _channelVideos = new();
+    private readonly Dictionary<int, IChannelFrameSource> _channelVideos = new();
     private readonly Dictionary<int, byte[]> _channelVideoPixels = new();
     private ModelGeometry? _model;
     private bool _initialized;
@@ -291,7 +291,7 @@ void main()
 
     private bool TrySetChannelVideo(int channel, string path, out string message)
     {
-        if (!VideoTextureSource.TryCreate(path, out var video, out message) || video is null)
+        if (!VideoTextureSource.TryCreate(path, out VideoTextureSource? video, out message) || video is null)
         {
             return false;
         }
@@ -362,6 +362,56 @@ void main()
         _backBuffer?.Resize(_width, _height);
         GL.Viewport(0, 0, _width, _height);
     }
+
+    /// <summary>
+    /// Loads a live webcam as an iChannel source.
+    /// </summary>
+    public bool TrySetChannelWebcam(int channel, string deviceName, out string message)
+    {
+        if (channel < 0 || channel > 3)
+        {
+            message = "Channel must be between 0 and 3.";
+            return false;
+        }
+
+        // Clean up existing source for this channel.
+        if (_channelTextures.TryGetValue(channel, out int oldTex))
+        {
+            GL.DeleteTexture(oldTex);
+            _channelTextures.Remove(channel);
+        }
+
+        if (_channelVideos.Remove(channel, out var oldSource))
+        {
+            oldSource.Dispose();
+            _channelVideoPixels.Remove(channel);
+        }
+
+        if (!WebcamTextureSource.TryCreate(deviceName, out var webcam, out message))
+        {
+            return false;
+        }
+
+        var pixels = new byte[webcam.FrameByteCount];
+        if (!webcam.TryReadNextFrame(pixels))
+        {
+            webcam.Dispose();
+            message = $"Webcam '{deviceName}' not producing frames.";
+            return false;
+        }
+
+        int texId = CreateTexture2D(webcam.Width, webcam.Height, pixels, useMipmaps: false);
+        _channelTextures[channel] = texId;
+        _channelVideos[channel] = webcam;
+        _channelVideoPixels[channel] = pixels;
+        message = $"Webcam ativa em iChannel{channel}: {deviceName} ({webcam.Width}x{webcam.Height})";
+        return true;
+    }
+
+    /// <summary>
+    /// Lists available cameras on the system.
+    /// </summary>
+    public IReadOnlyList<string> ListCameras() => WebcamTextureSource.ListCameras();
 
     public void Render(double elapsedSeconds)
     {

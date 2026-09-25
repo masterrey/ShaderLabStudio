@@ -740,6 +740,97 @@ public partial class MainWindow : Window
     private void LoadChannel1_Click(object sender, RoutedEventArgs e) => LoadChannel(1);
     private void LoadChannel2_Click(object sender, RoutedEventArgs e) => LoadChannel(2);
     private void LoadChannel3_Click(object sender, RoutedEventArgs e) => LoadChannel(3);
+
+    private void WebcamChannel0_Click(object sender, RoutedEventArgs e) => SelectWebcamChannel(0);
+    private void WebcamChannel1_Click(object sender, RoutedEventArgs e) => SelectWebcamChannel(1);
+    private void WebcamChannel2_Click(object sender, RoutedEventArgs e) => SelectWebcamChannel(2);
+    private void WebcamChannel3_Click(object sender, RoutedEventArgs e) => SelectWebcamChannel(3);
+
+    private void SelectWebcamChannel(int channel)
+    {
+        var cameras = RunVideoActionAndCapture(() => _renderer.ListCameras());
+        if (cameras is null)
+        {
+            AppendDiagnostic("[ERRO DE VÍDEO] Webcam indisponível.");
+            return;
+        }
+
+        if (cameras.Count == 0)
+        {
+            AppendDiagnostic($"Nenhuma webcam encontrada. Verifique se a câmera está conectada e o ffmpeg está instalado.");
+            return;
+        }
+
+        // Show a simple selection dialog.
+        var deviceName = PromptSelectCamera(cameras);
+        if (string.IsNullOrWhiteSpace(deviceName))
+        {
+            return;
+        }
+
+        var message = RunVideoActionAndCapture(() =>
+        {
+            _glControl?.MakeCurrent();
+            return _renderer.TrySetChannelWebcam(channel, deviceName, out var msg) ? msg : $"ERRO: {msg}";
+        });
+
+        if (message is not null)
+        {
+            AppendDiagnostic(message);
+            if (message.StartsWith("ERRO"))
+            {
+                StatusTextBlock.Text = "Falha ao conectar webcam";
+            }
+            else
+            {
+                StatusTextBlock.Text = $"Webcam ativa em iChannel{channel}";
+                _document.Channels.First(c => c.Index == channel).TexturePath = deviceName;
+                _sessionStore.Save(_document);
+            }
+        }
+    }
+
+    private static string? PromptSelectCamera(IReadOnlyList<string> cameras)
+    {
+        if (cameras.Count == 1)
+        {
+            return cameras[0];
+        }
+
+        // Build a simple WPF dialog with a ListBox.
+        var window = new Window
+        {
+            Title = "Selecionar Webcam",
+            Width = 400,
+            Height = 250,
+            WindowStartupLocation = WindowStartupLocation.CenterScreen,
+            ResizeMode = ResizeMode.NoResize
+        };
+
+        var panel = new DockPanel { Margin = new Thickness(10) };
+        var cancelBtn = new System.Windows.Controls.Button { Content = "Cancelar", Width = 80, HorizontalAlignment = System.Windows.HorizontalAlignment.Right, Margin = new Thickness(0, 0, 0, 8) };
+        DockPanel.SetDock(cancelBtn, Dock.Top);
+
+        var listBox = new System.Windows.Controls.ListBox { Margin = new Thickness(0, 8, 0, 8) };
+        foreach (var cam in cameras)
+        {
+            listBox.Items.Add(new ListBoxItem { Content = cam });
+        }
+        listBox.SelectedIndex = 0;
+
+        var confirmBtn = new System.Windows.Controls.Button { Content = "OK", Width = 80, HorizontalAlignment = System.Windows.HorizontalAlignment.Left, Margin = new Thickness(0, 8, 0, 0) };
+
+        cancelBtn.Click += (_, _) => { window.DialogResult = false; };
+        confirmBtn.Click += (_, _) => { window.DialogResult = true; };
+
+        panel.Children.Add(cancelBtn);
+        panel.Children.Add(listBox);
+        panel.Children.Add(confirmBtn);
+        window.Content = panel;
+
+        return window.ShowDialog() == true ? (listBox.SelectedItem as ListBoxItem)?.Content.ToString() : null;
+    }
+
     private void ResetCameraButton_Click(object sender, RoutedEventArgs e)
     {
         _renderer.ResetCamera();
@@ -1312,7 +1403,7 @@ public partial class MainWindow : Window
 
             // Batch all highlighting into ONE undo operation so Ctrl+Z
             // undoes the user's text edit, not a formatting change.
-            document.BeginUndoableOperation();
+            editor.BeginChange();
 
             var defaultForeground = _currentTheme == AppThemeMode.Dark 
                 ? CreateBrush("#D4D4D4") 
@@ -1344,7 +1435,7 @@ public partial class MainWindow : Window
                 }
             }
 
-            document.EndUndoableOperation();
+            editor.EndChange();
         }
         finally
         {
@@ -1432,6 +1523,30 @@ public partial class MainWindow : Window
             CompileSummaryTextBlock.Text = "ERRO DE VÍDEO — salve o código e reinicie a aplicação para tentar novamente.";
             CompileSummaryTextBlock.SetResourceReference(TextBlock.ForegroundProperty, "ErrorForegroundBrush");
             AppendDiagnostic($"[ERRO DE VÍDEO] {ex}");
+        }
+    }
+
+    /// <summary>
+    /// Runs an action that returns a value within the video guard.
+    /// Returns null if the video subsystem has failed.
+    /// </summary>
+    private T? RunVideoActionAndCapture<T>(Func<T> action) where T : class
+    {
+        if (_videoFailed) return null;
+        try { return action(); }
+        catch (Exception ex)
+        {
+            _videoFailed = true;
+            _renderTimer.Stop();
+            _compileDebounceTimer.Stop();
+            ExitFullscreenIfActive();
+            PreviewHost.Visibility = Visibility.Collapsed;
+            PreviewTitleTextBlock.Text = "Prévia indisponível — falha de vídeo";
+            StatusTextBlock.Text = "Vídeo interrompido. Você pode editar e salvar o código.";
+            CompileSummaryTextBlock.Text = "ERRO DE VÍDEO — salve o código e reinicie a aplicação para tentar novamente.";
+            CompileSummaryTextBlock.SetResourceReference(TextBlock.ForegroundProperty, "ErrorForegroundBrush");
+            AppendDiagnostic($"[ERRO DE VÍDEO] {ex}");
+            return null;
         }
     }
 
