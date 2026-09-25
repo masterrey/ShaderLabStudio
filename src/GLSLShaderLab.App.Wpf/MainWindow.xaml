@@ -6,6 +6,7 @@
         xmlns:wf="clr-namespace:System.Windows.Forms.Integration;assembly=WindowsFormsIntegration"
         mc:Ignorable="d"
         Title="GLSL Shader Lab Studio"
+        Icon="Assets/ShaderLabStudio.ico"
         Height="900"
         Width="1500"
         Loaded="OnLoaded"
