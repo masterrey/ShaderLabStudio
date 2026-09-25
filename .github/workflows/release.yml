@@ -40,6 +40,17 @@ jobs:
             -p:IncludeNativeLibrariesForSelfExtract=true `
             --output publish/GLSLShaderLab
 
+      - name: Ensure native dependencies are present
+        run: |
+          $publishDir = "publish/GLSLShaderLab"
+          $assimpDll = Join-Path $env:USERPROFILE ".nuget\packages\assimpnet\5.0.0-beta1\runtimes\win-x64\native\assimp.dll"
+          if (Test-Path $assimpDll) {
+            Copy-Item $assimpDll -Destination $publishDir -Force
+            Write-Host "Copied assimp.dll to publish output"
+          } else {
+            Write-Error "assimp.dll not found in NuGet cache at: $assimpDll"
+          }
+
       - name: Zip artifact
         run: Compress-Archive -Path publish/GLSLShaderLab/* -DestinationPath publish/GLSLShaderLab-win-x64.zip
 
