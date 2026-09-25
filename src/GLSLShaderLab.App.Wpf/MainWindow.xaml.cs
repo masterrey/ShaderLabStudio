@@ -940,28 +940,6 @@ public partial class MainWindow : Window
             return;
         }
 
-        private void ClearChannel(int channel) => RunVideoAction(() => ClearChannelCore(channel));
-
-        private void ClearChannelCore(int channel)
-        {
-            if (_videoFailed || _glControl is null)
-            {
-                return;
-            }
-
-            _glControl.MakeCurrent();
-            var ok = _renderer.TrySetChannelTexture(channel, null, out var message);
-            AppendDiagnostic(message);
-            if (!ok)
-            {
-                return;
-            }
-
-            _document.Channels.First(c => c.Index == channel).TexturePath = null;
-            _sessionStore.Save(_document);
-            StatusTextBlock.Text = $"iChannel{channel} using buffer";
-        }
-
         var dialog = new Microsoft.Win32.OpenFileDialog
         {
             Filter = "Images & Videos|*.png;*.jpg;*.jpeg;*.bmp;*.tga;*.mp4;*.mov;*.avi;*.mkv;*.webm;*.wmv;*.m4v;*.mpg;*.mpeg|Image Files|*.png;*.jpg;*.jpeg;*.bmp;*.tga|Video Files|*.mp4;*.mov;*.avi;*.mkv;*.webm;*.wmv;*.m4v;*.mpg;*.mpeg",
@@ -983,6 +961,28 @@ public partial class MainWindow : Window
             entry.TexturePath = dialog.FileName;
             _sessionStore.Save(_document);
         }
+    }
+
+    private void ClearChannel(int channel) => RunVideoAction(() => ClearChannelCore(channel));
+
+    private void ClearChannelCore(int channel)
+    {
+        if (_videoFailed || _glControl is null)
+        {
+            return;
+        }
+
+        _glControl.MakeCurrent();
+        var ok = _renderer.TrySetChannelTexture(channel, null, out var message);
+        AppendDiagnostic(message);
+        if (!ok)
+        {
+            return;
+        }
+
+        _document.Channels.First(c => c.Index == channel).TexturePath = null;
+        _sessionStore.Save(_document);
+        StatusTextBlock.Text = $"iChannel{channel} using buffer";
     }
 
     private void OnPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
