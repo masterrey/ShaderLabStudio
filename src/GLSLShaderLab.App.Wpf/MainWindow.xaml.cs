@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
@@ -1311,12 +1310,12 @@ public partial class MainWindow : Window
         {
             var document = editor.Document;
 
-            // Merge all highlighting changes into a single undo unit so Ctrl+Z undoes
-            // the actual typing instead of stepping through color reapplications.
-            GetUndoManager(editor)?.InvokeMethod("DeclareChangeBlock");
+            // Batch all highlighting into ONE undo operation so Ctrl+Z
+            // undoes the user's text edit, not a formatting change.
+            document.BeginUndoableOperation();
 
-            var defaultForeground = _currentTheme == AppThemeMode.Dark
-                ? CreateBrush("#D4D4D4")
+            var defaultForeground = _currentTheme == AppThemeMode.Dark 
+                ? CreateBrush("#D4D4D4") 
                 : CreateBrush("#000000");
 
             var fullRange = new TextRange(document.ContentStart, document.ContentEnd);
@@ -1344,6 +1343,8 @@ public partial class MainWindow : Window
                     }
                 }
             }
+
+            document.EndUndoableOperation();
         }
         finally
         {
@@ -1351,24 +1352,6 @@ public partial class MainWindow : Window
         }
     }
 
-    private static UndoManagerRef? GetUndoManager(WpfRichTextBox editor)
-    {
-        // RichTextBox does not expose its UndoManager publicly.
-        const BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Instance;
-        var manager = editor.GetType().GetProperty("UndoManager", flags)?.GetValue(editor)
-            ?? editor.GetType().GetField("_undoManager", flags)?.GetValue(editor);
-        return manager is null ? null : new UndoManagerRef(manager);
-    }
-
-    private sealed class UndoManagerRef
-    {
-        private readonly object _instance;
-
-        public UndoManagerRef(object instance) => _instance = instance;
-
-        public void InvokeMethod(string name) =>
-            _instance.GetType().GetMethod(name, BindingFlags.Public | BindingFlags.Instance)?.Invoke(_instance, null);
-    }
 
     private static TextPointer GetTextPointerAtOffset(FlowDocument document, int offset)
     {
