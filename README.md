@@ -227,6 +227,12 @@ ShaderLabStudio/
 
 ## 📖 Como Usar / How to Use
 
+### Roadmap de Melhorias / Improvement Roadmap
+
+Para acompanhar as melhorias planejadas do código-fonte, consulte:
+
+- [docs/PROJETO_MELHORIAS.md](docs/PROJETO_MELHORIAS.md)
+
 ### Para Aprender Shaders / To Learn Shaders
 
 1. **Abra o Studio** (F5 no VS Code) / **Open Studio** (F5 in VS Code)
