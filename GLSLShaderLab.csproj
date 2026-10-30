@@ -24,6 +24,7 @@
   <ItemGroup>
     <Compile Remove="glsl Shaders\**" />
     <Compile Remove="src\**" />
+    <Compile Remove="tests\**\*.cs" />
     <EmbeddedResource Remove="glsl Shaders\**" />
     <EmbeddedResource Remove="src\**" />
     <None Remove="glsl Shaders\**" />

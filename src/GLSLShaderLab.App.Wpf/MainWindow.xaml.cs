@@ -64,9 +64,13 @@ public partial class MainWindow : Window
     private bool _isOrbitingCamera;
     private System.Drawing.Point _lastMousePosition;
     private bool _isApplyingSyntaxHighlighting;
+    private bool _isUpdatingLineNumbers;
     private readonly Dictionary<WpfRichTextBox, string> _editorTextStates = new();
+    private readonly Dictionary<WpfRichTextBox, (int Start, int End)> _editorSelectionStates = new();
     private readonly Dictionary<WpfRichTextBox, Stack<string>> _editorUndoHistory = new();
     private readonly Dictionary<WpfRichTextBox, Stack<string>> _editorRedoHistory = new();
+    private readonly Dictionary<WpfRichTextBox, Stack<(int Start, int End)>> _editorUndoSelectionHistory = new();
+    private readonly Dictionary<WpfRichTextBox, Stack<(int Start, int End)>> _editorRedoSelectionHistory = new();
 
     private (Regex Pattern, WpfBrush Brush, FontWeight? Weight)[] GetGlslHighlightRules()
     {
@@ -345,7 +349,7 @@ public partial class MainWindow : Window
 
     private void EditorTextBox_TextChanged(object? sender, EventArgs e)
     {
-        if (!_isApplyingSyntaxHighlighting && sender is WpfRichTextBox editor)
+        if (!_isApplyingSyntaxHighlighting && !_isUpdatingLineNumbers && sender is WpfRichTextBox editor)
         {
             RecordEditorChange(editor);
             ApplySyntaxHighlighting(editor);
@@ -1408,7 +1412,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void SetEditorText(WpfRichTextBox editor, string text, bool resetUndoHistory = true)
+    private void SetEditorText(WpfRichTextBox editor, string text, bool resetUndoHistory = true, int? selectionStart = null, int? selectionEnd = null)
     {
         _isApplyingSyntaxHighlighting = true;
         try
@@ -1440,6 +1444,21 @@ public partial class MainWindow : Window
             UpdateLineNumbers(VertexEditorTextBox, VertexEditorLineNumbers);
         }
 
+        if (selectionStart.HasValue)
+        {
+            var start = Math.Clamp(selectionStart.Value, 0, text.Length);
+            var end = Math.Clamp(selectionEnd ?? selectionStart.Value, 0, text.Length);
+            if (start > end)
+            {
+                (start, end) = (end, start);
+            }
+
+            editor.Selection.Select(
+                GetTextPointerAtOffset(editor.Document, start),
+                GetTextPointerAtOffset(editor.Document, end));
+            editor.CaretPosition = editor.Selection.End;
+        }
+
         if (resetUndoHistory)
         {
             ResetEditorHistory(editor, text);
@@ -1449,13 +1468,23 @@ public partial class MainWindow : Window
     private void RecordEditorChange(WpfRichTextBox editor)
     {
         var currentText = GetEditorText(editor);
+        GetSelectionOffsets(editor, out var selectionStart, out var selectionEnd);
+
         if (_editorTextStates.TryGetValue(editor, out var previousText) && previousText != currentText)
         {
             GetHistory(_editorUndoHistory, editor).Push(previousText);
+
+            var previousSelection = _editorSelectionStates.TryGetValue(editor, out var sel)
+                ? sel
+                : (0, 0);
+            GetSelectionHistory(_editorUndoSelectionHistory, editor).Push(previousSelection);
+
             GetHistory(_editorRedoHistory, editor).Clear();
+            GetSelectionHistory(_editorRedoSelectionHistory, editor).Clear();
         }
 
         _editorTextStates[editor] = currentText;
+        _editorSelectionStates[editor] = (selectionStart, selectionEnd);
     }
 
     private void UndoEditorChange(WpfRichTextBox editor)
@@ -1466,9 +1495,23 @@ public partial class MainWindow : Window
             return;
         }
 
-        GetHistory(_editorRedoHistory, editor).Push(GetEditorText(editor));
-        SetEditorText(editor, undoHistory.Pop(), resetUndoHistory: false);
-        _editorTextStates[editor] = GetEditorText(editor);
+        GetSelectionOffsets(editor, out var currentSelectionStart, out var currentSelectionEnd);
+        var currentText = GetEditorText(editor);
+        GetHistory(_editorRedoHistory, editor).Push(currentText);
+        GetSelectionHistory(_editorRedoSelectionHistory, editor).Push((currentSelectionStart, currentSelectionEnd));
+
+        var restoredText = undoHistory.Pop();
+        var undoSelectionHistory = GetSelectionHistory(_editorUndoSelectionHistory, editor);
+        var restoredSelection = undoSelectionHistory.Count > 0
+            ? undoSelectionHistory.Pop()
+            : (Start: 0, End: 0);
+
+        var clampedStart = Math.Min(restoredSelection.Start, restoredText.Length);
+        var clampedEnd = Math.Min(restoredSelection.End, restoredText.Length);
+
+        SetEditorText(editor, restoredText, resetUndoHistory: false, selectionStart: clampedStart, selectionEnd: clampedEnd);
+        _editorTextStates[editor] = restoredText;
+        _editorSelectionStates[editor] = (clampedStart, clampedEnd);
     }
 
     private void RedoEditorChange(WpfRichTextBox editor)
@@ -1479,16 +1522,34 @@ public partial class MainWindow : Window
             return;
         }
 
-        GetHistory(_editorUndoHistory, editor).Push(GetEditorText(editor));
-        SetEditorText(editor, redoHistory.Pop(), resetUndoHistory: false);
-        _editorTextStates[editor] = GetEditorText(editor);
+        GetSelectionOffsets(editor, out var currentSelectionStart, out var currentSelectionEnd);
+        var currentText = GetEditorText(editor);
+        GetHistory(_editorUndoHistory, editor).Push(currentText);
+        GetSelectionHistory(_editorUndoSelectionHistory, editor).Push((currentSelectionStart, currentSelectionEnd));
+
+        var restoredText = redoHistory.Pop();
+        var redoSelectionHistory = GetSelectionHistory(_editorRedoSelectionHistory, editor);
+        var restoredSelection = redoSelectionHistory.Count > 0
+            ? redoSelectionHistory.Pop()
+            : (Start: 0, End: 0);
+
+        var clampedStart = Math.Min(restoredSelection.Start, restoredText.Length);
+        var clampedEnd = Math.Min(restoredSelection.End, restoredText.Length);
+
+        SetEditorText(editor, restoredText, resetUndoHistory: false, selectionStart: clampedStart, selectionEnd: clampedEnd);
+        _editorTextStates[editor] = restoredText;
+        _editorSelectionStates[editor] = (clampedStart, clampedEnd);
     }
 
     private void ResetEditorHistory(WpfRichTextBox editor, string text)
     {
         _editorTextStates[editor] = text;
+        GetSelectionOffsets(editor, out var selectionStart, out var selectionEnd);
+        _editorSelectionStates[editor] = (selectionStart, selectionEnd);
         GetHistory(_editorUndoHistory, editor).Clear();
         GetHistory(_editorRedoHistory, editor).Clear();
+        GetSelectionHistory(_editorUndoSelectionHistory, editor).Clear();
+        GetSelectionHistory(_editorRedoSelectionHistory, editor).Clear();
     }
 
     private static Stack<string> GetHistory(Dictionary<WpfRichTextBox, Stack<string>> histories, WpfRichTextBox editor)
@@ -1496,6 +1557,17 @@ public partial class MainWindow : Window
         if (!histories.TryGetValue(editor, out var history))
         {
             history = new Stack<string>();
+            histories[editor] = history;
+        }
+
+        return history;
+    }
+
+    private static Stack<(int Start, int End)> GetSelectionHistory(Dictionary<WpfRichTextBox, Stack<(int Start, int End)>> histories, WpfRichTextBox editor)
+    {
+        if (!histories.TryGetValue(editor, out var history))
+        {
+            history = new Stack<(int Start, int End)>();
             histories[editor] = history;
         }
 
@@ -1580,7 +1652,7 @@ public partial class MainWindow : Window
                      (context == TextPointerContext.ElementStart && navigator.GetAdjacentElement(LogicalDirection.Forward) is LineBreak))
             {
                 if (remaining <= 0) return navigator;
-                remaining = Math.Max(0, remaining - 2); // TextRange represents breaks as CRLF.
+                remaining = Math.Max(0, remaining - 2); // TextRange representa breaks como CRLF.
             }
             navigator = navigator.GetNextContextPosition(LogicalDirection.Forward);
         }
@@ -1589,25 +1661,38 @@ public partial class MainWindow : Window
 
     private void UpdateLineNumbers(WpfRichTextBox editor, TextBlock lineNumberBlock)
     {
-        var text = GetEditorText(editor);
-        var lineCount = text.Split('\n').Length;
-
-        var lineNumbers = new System.Text.StringBuilder();
-        for (int i = 1; i <= lineCount; i++)
+        if (_isUpdatingLineNumbers)
         {
-            lineNumbers.AppendLine(i.ToString());
+            return;
         }
 
-        lineNumberBlock.Text = lineNumbers.ToString();
+        _isUpdatingLineNumbers = true;
+        try
+        {
+            var text = GetEditorText(editor);
+            var lineCount = text.Split('\n').Length;
 
-        // Usar o mesmo line height do editor para alinhamento perfeito
-        var lineHeight = editor.FontSize * 1.4;
-        lineNumberBlock.LineHeight = lineHeight;
-        lineNumberBlock.LineStackingStrategy = LineStackingStrategy.BlockLineHeight;
-        editor.Document.LineHeight = lineHeight;
-        editor.Document.LineStackingStrategy = LineStackingStrategy.BlockLineHeight;
-        editor.Document.PageWidth = 10000; // Keep source lines unwrapped, matching the gutter.
-        foreach (var block in editor.Document.Blocks) block.Margin = new Thickness(0);
+            var lineNumbers = new System.Text.StringBuilder();
+            for (int i = 1; i <= lineCount; i++)
+            {
+                lineNumbers.AppendLine(i.ToString());
+            }
+
+            lineNumberBlock.Text = lineNumbers.ToString();
+
+            // Usar o mesmo line height do editor para alinhamento perfeito
+            var lineHeight = editor.FontSize * 1.4;
+            lineNumberBlock.LineHeight = lineHeight;
+            lineNumberBlock.LineStackingStrategy = LineStackingStrategy.BlockLineHeight;
+            editor.Document.LineHeight = lineHeight;
+            editor.Document.LineStackingStrategy = LineStackingStrategy.BlockLineHeight;
+            editor.Document.PageWidth = 10000; // Keep source lines unwrapped, matching the gutter.
+            foreach (var block in editor.Document.Blocks.ToArray()) block.Margin = new Thickness(0);
+        }
+        finally
+        {
+            _isUpdatingLineNumbers = false;
+        }
     }
 
     private void SetupLineNumberScrollSync()
