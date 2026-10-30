@@ -14,27 +14,37 @@
         PreviewKeyDown="OnPreviewKeyDown"
         WindowStartupLocation="CenterScreen">
     <DockPanel Background="{DynamicResource PrimaryBackgroundBrush}">
-        <!-- Toolbar Row 1: File & Compile -->
-        <ToolBar Name="MainToolBar" DockPanel.Dock="Top" Height="Auto" Padding="4" ToolBar.OverflowMode="Never">
-            <DockPanel Width="Auto" LastChildFill="False">
-                <!-- Left side: File, Compile, Playback -->
-                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" VerticalAlignment="Center">
-                    <Button Name="OpenButton" Content="📁 Open" Click="OpenButton_Click" Padding="8,4" Margin="2"/>
-                    <Button Name="SaveButton" Content="💾 Save" Click="SaveButton_Click" Padding="8,4" Margin="2"/>
-                    <Button Content="Save As…" Click="SaveAsButton_Click" Padding="8,4" Margin="2"/>
-                    <Separator Style="{DynamicResource {x:Static ToolBar.SeparatorStyleKey}}" Margin="4,0"/>
-                    <Button Name="CompileButton" Content="⚙️ Compile" Click="CompileButton_Click" Padding="8,4" Margin="2"/>
-                    <CheckBox Name="AutoCompileCheckBox" Content="Auto" Checked="AutoCompileCheckBox_OnChanged" Unchecked="AutoCompileCheckBox_OnChanged" Margin="4,0,0,0" VerticalAlignment="Center"/>
-                    <Separator Style="{DynamicResource {x:Static ToolBar.SeparatorStyleKey}}" Margin="4,0"/>
-                    <Button Name="PlayPauseButton" Content="▶️ Play" Click="PlayPauseButton_Click" Padding="8,4" Margin="2"/>
-                    <Button Name="ResetTimeButton" Content="⏱️ Reset" Click="ResetTimeButton_Click" Padding="8,4" Margin="2"/>
-                    <Button Name="FullscreenButton" Content="🖥️ Full" Click="FullscreenButton_Click" Padding="8,4" Margin="2"/>
-                </StackPanel>
-
-                <!-- Right side: Theme Toggle -->
-                <Button Name="ThemeToggleButton" Content="🌓 Theme" Click="ThemeToggleButton_Click" Padding="10,4" Margin="2" DockPanel.Dock="Right" Background="{DynamicResource TertiaryBackgroundBrush}" Foreground="{DynamicResource PrimaryForegroundBrush}"/>
-            </DockPanel>
-        </ToolBar>
+        <Menu Name="MainMenu" DockPanel.Dock="Top">
+            <MenuItem Header="_Arquivo">
+                <MenuItem Header="_Open..." Click="OpenButton_Click" InputGestureText="Ctrl+O"/>
+                <MenuItem Header="_Save" Click="SaveButton_Click" InputGestureText="Ctrl+S"/>
+                <MenuItem Header="Save _As..." Click="SaveAsButton_Click"/>
+                <Separator/>
+                <MenuItem Header="_Export..." Click="ExportButton_Click"/>
+                <Separator/>
+                <MenuItem Header="_Exit" Click="ExitMenuItem_Click"/>
+            </MenuItem>
+            <MenuItem Header="_Editar">
+                <MenuItem Header="_Undo" Click="UndoMenuItem_Click" InputGestureText="Ctrl+Z"/>
+                <MenuItem Header="_Redo" Click="RedoMenuItem_Click" InputGestureText="Ctrl+Y"/>
+                <Separator/>
+                <MenuItem Header="Cu_t" Command="ApplicationCommands.Cut" InputGestureText="Ctrl+X"/>
+                <MenuItem Header="_Copy" Command="ApplicationCommands.Copy" InputGestureText="Ctrl+C"/>
+                <MenuItem Header="_Paste" Command="ApplicationCommands.Paste" InputGestureText="Ctrl+V"/>
+                <MenuItem Header="Select _All" Command="ApplicationCommands.SelectAll" InputGestureText="Ctrl+A"/>
+            </MenuItem>
+            <MenuItem Header="_Shader">
+                <MenuItem Header="_Compile" Click="CompileButton_Click"/>
+                <MenuItem Name="AutoCompileMenuItem" Header="_Auto Compile" IsCheckable="True" Checked="AutoCompileMenuItem_OnChanged" Unchecked="AutoCompileMenuItem_OnChanged"/>
+                <Separator/>
+                <MenuItem Name="PlayPauseMenuItem" Header="⏸ Pause" Click="PlayPauseButton_Click"/>
+                <MenuItem Header="Reset _Time" Click="ResetTimeButton_Click"/>
+            </MenuItem>
+            <MenuItem Header="_Exibir">
+                <MenuItem Name="FullscreenMenuItem" Header="🖥 Fullscreen" Click="FullscreenButton_Click"/>
+                <MenuItem Header="🌓 Theme" Click="ThemeToggleButton_Click"/>
+            </MenuItem>
+        </Menu>
 
         <!-- Toolbar Row 2: 3D Settings & Templates -->
         <ToolBar Name="OptionsToolBar" DockPanel.Dock="Top" Height="Auto" Padding="4" ToolBar.OverflowMode="Never">
@@ -51,6 +61,8 @@
                 <Separator Style="{DynamicResource {x:Static ToolBar.SeparatorStyleKey}}" Margin="4,0"/>
                 <TextBlock Text="Template:" VerticalAlignment="Center" Margin="4,0"/>
                 <ComboBox Name="TemplateComboBox" Width="120" SelectionChanged="TemplateComboBox_SelectionChanged" Padding="4" VerticalAlignment="Center"/>
+                <Separator Style="{DynamicResource {x:Static ToolBar.SeparatorStyleKey}}" Margin="4,0"/>
+                <CheckBox Name="AutoCompileCheckBox" Content="Auto Compile" Checked="AutoCompileCheckBox_OnChanged" Unchecked="AutoCompileCheckBox_OnChanged" Margin="4,0" VerticalAlignment="Center"/>
             </StackPanel>
         </ToolBar>
 

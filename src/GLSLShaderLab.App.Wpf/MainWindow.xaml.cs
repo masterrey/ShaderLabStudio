@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Windows;
@@ -135,6 +136,7 @@ public partial class MainWindow : Window
         }
 
         AutoCompileCheckBox.IsChecked = _document.AutoCompile;
+        AutoCompileMenuItem.IsChecked = _document.AutoCompile;
         SetEditorText(EditorTextBox, _document.FragmentSource);
         SetEditorText(VertexEditorTextBox, _document.VertexSource);
 
@@ -158,7 +160,7 @@ public partial class MainWindow : Window
 
         Update3DControlsState();
         _renderer.SetPaused(_document.IsPaused);
-        PlayPauseButton.Content = _document.IsPaused ? "Play" : "Pause";
+        PlayPauseMenuItem.Header = _document.IsPaused ? "▶️ Play" : "⏸ Pause";
         AutoRotateCheckBox.IsChecked = _document.AutoRotateModel;
         _renderer.SetModelAutoRotation(_document.AutoRotateModel);
 
@@ -606,15 +608,60 @@ public partial class MainWindow : Window
 
     private void AutoCompileCheckBox_OnChanged(object sender, RoutedEventArgs e)
     {
-        _document.AutoCompile = AutoCompileCheckBox.IsChecked == true;
+        var enabled = AutoCompileCheckBox.IsChecked == true;
+        if (AutoCompileMenuItem.IsChecked != enabled)
+        {
+            AutoCompileMenuItem.IsChecked = enabled;
+        }
+
+        _document.AutoCompile = enabled;
         _sessionStore.Save(_document);
+    }
+
+    private void AutoCompileMenuItem_OnChanged(object sender, RoutedEventArgs e)
+    {
+        var enabled = AutoCompileMenuItem.IsChecked;
+        if (AutoCompileCheckBox.IsChecked != enabled)
+        {
+            AutoCompileCheckBox.IsChecked = enabled;
+            return;
+        }
+
+        _document.AutoCompile = enabled;
+        _sessionStore.Save(_document);
+    }
+
+    private WpfRichTextBox GetActiveEditor()
+    {
+        if (Keyboard.FocusedElement is WpfRichTextBox focusedEditor &&
+            (focusedEditor == EditorTextBox || focusedEditor == VertexEditorTextBox))
+        {
+            return focusedEditor;
+        }
+
+        return ShaderEditorsTabControl.SelectedIndex == 1 ? VertexEditorTextBox : EditorTextBox;
+    }
+
+    private void UndoMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        UndoEditorChange(GetActiveEditor());
+    }
+
+    private void RedoMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        RedoEditorChange(GetActiveEditor());
+    }
+
+    private void ExitMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        Close();
     }
 
     private void PlayPauseButton_Click(object sender, RoutedEventArgs e)
     {
         _document.IsPaused = !_document.IsPaused;
         _renderer.SetPaused(_document.IsPaused);
-        PlayPauseButton.Content = _document.IsPaused ? "Play" : "Pause";
+        PlayPauseMenuItem.Header = _document.IsPaused ? "▶️ Play" : "⏸ Pause";
         _sessionStore.Save(_document);
     }
 
@@ -658,7 +705,8 @@ public partial class MainWindow : Window
             _previousPreviewChannelsRowHeight = PreviewChannelsRowDefinition.Height;
             _previousPreviewBorderMargin = PreviewBorder.Margin;
 
-            MainToolBar.Visibility = Visibility.Collapsed;
+            MainMenu.Visibility = Visibility.Collapsed;
+            OptionsToolBar.Visibility = Visibility.Collapsed;
             MainStatusBar.Visibility = Visibility.Collapsed;
             EditorPaneGrid.Visibility = Visibility.Collapsed;
             DiagnosticsGroupBox.Visibility = Visibility.Collapsed;
@@ -677,7 +725,7 @@ public partial class MainWindow : Window
             WindowState = WindowState.Maximized;
             Topmost = true;
             _isFullscreen = true;
-            FullscreenButton.Content = "Windowed";
+            FullscreenMenuItem.Header = "🗗 Windowed";
             return;
         }
 
@@ -686,7 +734,8 @@ public partial class MainWindow : Window
         ResizeMode = _previousResizeMode;
         WindowState = _previousWindowState;
 
-        MainToolBar.Visibility = Visibility.Visible;
+        MainMenu.Visibility = Visibility.Visible;
+        OptionsToolBar.Visibility = Visibility.Visible;
         MainStatusBar.Visibility = Visibility.Visible;
         EditorPaneGrid.Visibility = Visibility.Visible;
         DiagnosticsGroupBox.Visibility = Visibility.Visible;
@@ -701,7 +750,7 @@ public partial class MainWindow : Window
         PreviewBorder.Margin = _previousPreviewBorderMargin;
 
         _isFullscreen = false;
-        FullscreenButton.Content = "Fullscreen";
+        FullscreenMenuItem.Header = "🖥 Fullscreen";
     }
 
     private void RenderModeComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
@@ -809,7 +858,7 @@ public partial class MainWindow : Window
             }
             else
             {
-                StatusTextBlock.Text = $"Webcam ativa em iChannel{channel}";
+                StatusTextBlock.Text = $"Webcam activa em iChannel{channel}";
                 _document.Channels.First(c => c.Index == channel).TexturePath = deviceName;
                 _sessionStore.Save(_document);
             }
@@ -1089,6 +1138,104 @@ public partial class MainWindow : Window
         }
 
         SaveToFile(dialog.FileName, isVertexOnly: isVertexTab);
+    }
+
+    private void ExportButton_Click(object sender, RoutedEventArgs e)
+    {
+        _document.FragmentSource = GetEditorText(EditorTextBox);
+        _document.VertexSource = GetEditorText(VertexEditorTextBox);
+
+        var baseName = string.IsNullOrWhiteSpace(_currentFilePath)
+            ? "shader"
+            : Path.GetFileNameWithoutExtension(_currentFilePath);
+
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Filter = "Shader Package|*.zip|Unity Shader (GLSL/Built-in)|*.shader",
+            FilterIndex = 1,
+            FileName = baseName
+        };
+
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        var extension = Path.GetExtension(dialog.FileName);
+        if (string.Equals(extension, ".shader", StringComparison.OrdinalIgnoreCase))
+        {
+            var shaderContent = BuildUnityShader(baseName, _document.VertexSource, _document.FragmentSource);
+            File.WriteAllText(dialog.FileName, shaderContent);
+            AppendDiagnostic($"Exported Unity shader: {dialog.FileName}");
+            StatusTextBlock.Text = "Exported Unity shader";
+            return;
+        }
+
+        using (var archive = ZipFile.Open(dialog.FileName, ZipArchiveMode.Create))
+        {
+            WriteZipEntry(archive, $"{baseName}.frag", _document.FragmentSource);
+            WriteZipEntry(archive, $"{baseName}.vert", _document.VertexSource);
+            WriteZipEntry(archive, $"{baseName}.shader", BuildUnityShader(baseName, _document.VertexSource, _document.FragmentSource));
+        }
+
+        AppendDiagnostic($"Exported shader package: {dialog.FileName}");
+        StatusTextBlock.Text = "Exported package";
+    }
+
+    private static void WriteZipEntry(ZipArchive archive, string entryName, string content)
+    {
+        var entry = archive.CreateEntry(entryName, CompressionLevel.Optimal);
+        using var stream = entry.Open();
+        using var writer = new StreamWriter(stream);
+        writer.Write(content);
+    }
+
+    private static string BuildUnityShader(string baseName, string vertexSource, string fragmentSource)
+    {
+        static string StripVersion(string source)
+        {
+            var lines = source.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+            var filtered = lines.Where(line => !line.TrimStart().StartsWith("#version", StringComparison.Ordinal));
+            return string.Join(Environment.NewLine, filtered);
+        }
+
+        var safeName = string.IsNullOrWhiteSpace(baseName) ? "ShaderLabExport" : baseName;
+        var vertex = StripVersion(vertexSource);
+        var fragment = StripVersion(fragmentSource);
+
+        return
+            $"Shader \"Custom/{safeName}\"{Environment.NewLine}" +
+            $"{{{Environment.NewLine}" +
+            $"    SubShader{Environment.NewLine}" +
+            $"    {{{Environment.NewLine}" +
+            $"        Tags {{ \"RenderType\"=\"Opaque\" \"Queue\"=\"Geometry\" }}{Environment.NewLine}" +
+            $"        LOD 100{Environment.NewLine}" +
+            $"        Pass{Environment.NewLine}" +
+            $"        {{{Environment.NewLine}" +
+            $"            Cull Back{Environment.NewLine}" +
+            $"            ZWrite On{Environment.NewLine}" +
+            $"            ZTest LEqual{Environment.NewLine}" +
+            $"            GLSLPROGRAM{Environment.NewLine}" +
+            $"            #pragma only_renderers glcore gles3{Environment.NewLine}" +
+            $"{Environment.NewLine}" +
+            $"            // Unity compatibility aliases for common ShaderToy-style uniforms{Environment.NewLine}" +
+            $"            uniform vec4 _Time;{Environment.NewLine}" +
+            $"            uniform vec4 _ScreenParams;{Environment.NewLine}" +
+            $"            #define iTime (_Time.y){Environment.NewLine}" +
+            $"            #define iResolution (_ScreenParams.xy){Environment.NewLine}" +
+            $"{Environment.NewLine}" +
+            $"            #ifdef VERTEX{Environment.NewLine}" +
+            $"{vertex}{Environment.NewLine}" +
+            $"            #endif{Environment.NewLine}" +
+            $"{Environment.NewLine}" +
+            $"            #ifdef FRAGMENT{Environment.NewLine}" +
+            $"{fragment}{Environment.NewLine}" +
+            $"            #endif{Environment.NewLine}" +
+            $"            ENDGLSL{Environment.NewLine}" +
+            $"        }}{Environment.NewLine}" +
+            $"    }}{Environment.NewLine}" +
+            $"    Fallback Off{Environment.NewLine}" +
+            $"}}{Environment.NewLine}";
     }
 
     private void SaveToFile(string path, bool confirmOverwrite = false, bool isVertexOnly = false)
